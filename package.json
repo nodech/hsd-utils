@@ -1,0 +1,28 @@
+{
+  "name": "wallet-utils",
+  "version": "0.0.0",
+  "description": "",
+  "main": "lib/utils.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nodech/hsw-wallet-utils.git"
+  },
+  "author": "Nodari Chkuaselidze",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/nodech/hsw-wallet-utils/issues"
+  },
+  "homepage": "https://github.com/nodech/hsw-wallet-utils#readme",
+  "dependencies": {
+    "bcfg": "^0.1.7",
+    "bcurl": "^0.2.0",
+    "bfile": "^0.2.2",
+    "brq": "^0.1.8",
+    "bsert": "^0.0.10",
+    "hs-client": "^0.0.11",
+    "hsd": "^4.0.1"
+  }
+}

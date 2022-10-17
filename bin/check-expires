@@ -1,0 +1,204 @@
+#!/usr/bin/env node
+
+'use strict';
+
+const assert = require('bsert');
+const cfg = require('../lib/config');
+const wallet = require('../lib/wallet');
+const os = require('os');
+const path = require('path');
+const fs = require('bfile');
+
+async function dumpOwnNames(client, id) {
+  return await client.get(`/wallet/${id}/name`, { own: true });
+}
+
+function filterClosed(from) {
+  return from.filter(d => d.state === 'CLOSED');
+}
+
+function sortExpires(from) {
+  return from.sort((a, b) => {
+    return a.stats.renewalPeriodEnd - b.stats.renewalPeriodEnd;
+  });
+}
+
+function sortFilterTransfers(from) {
+  return from.filter(d => d.stats.transferLockupStart).sort((a, b) => {
+    return a.stats.transferLockupStart - b.stats.transferLockupStart;
+  });
+}
+
+function filterDays(from, days) {
+  assert(days, 'days not found.');
+  assert(typeof days === 'number', 'days is not a number');
+  return from.filter(d => d.stats.daysUntilExpire <= days);
+}
+
+function classify(from) {
+  const expired = from.filter(d => d.stats.daysUntilExpire <= 0);
+  const inTransfer = from.filter((d) => {
+    return d.stats.transferLockupStart && d.stats.daysUntilExpire > 0;
+  });
+
+  const needsRenew = from.filter((d) => {
+    return !d.stats.transferLockupStart && d.stats.daysUntilExpire > 0;
+  });
+
+  const expiring = from.filter(d => d.stats.daysUntilExpire > 0);
+
+  return {
+    expired,
+    inTransfer,
+    needsRenew,
+    expiring
+  };
+}
+
+function help() {
+  const help = `./bin/check-expires WALLET_ID STEP [DAYS [CONTINUE]]
+  STEPS:
+    0, dump: get wallet own names from wallet (big wallet request)
+    1, filter: filter closed names (auction state)
+    2, sort: sort names by expires and list all transfer locks.
+    3, filter-time: filter names by expire time (in days).
+    4, classify: classify filtered name into: expired, in-transfer, needs-renew
+
+  Diff STEPS:
+    all: Do all steps from 0 to 4.
+    status: get summary of classified data.
+  `;
+
+  console.log(help);
+  process.exit(2);
+}
+
+(async () => {
+  const config = cfg.parseConfig();
+
+  const id = config.str(0, 'primary');
+  assert(id, 'please pass id.');
+
+  if (!id)
+    help();
+
+  const defaultDir = path.join(os.tmpdir(), `check-expires-${id}`);
+  const dataDir = config.str('data', defaultDir);
+  const fileOwnNames = path.join(dataDir, '0-own-names.json');
+  const fileFiltered = path.join(dataDir, '1-filter-closed-names.json');
+  const fileSortedExpires = path.join(dataDir, '2-sort-expires.json');
+  const fileInTransferAll = path.join(dataDir, '2-in-transfer');
+
+  const fileFilteredTime = path.join(dataDir, '3-filtered-time.json');
+  const fileExpired = path.join(dataDir, '4-expired.json');
+  const fileInTransfer = path.join(dataDir, '4-in-transfer.json');
+  const fileNeedsRenew = path.join(dataDir, '4-needs-renew.json');
+  const fileExpiring = path.join(dataDir, '4-expiring.json');
+
+  await fs.mkdirp(dataDir);
+
+  const step = config.str(1, 'all');
+
+  const walletClient = wallet.walletClient();
+
+  let fallthrough = config.bool(3, false);
+
+  switch (step) {
+    case 'all':
+      fallthrough = true;
+
+    case '0':
+    case 'dump': {
+      console.log('Getting wallet names...');
+      await fs.writeFile(fileOwnNames, await dumpOwnNames(walletClient, id));
+
+      if (!fallthrough)
+        break;
+    }
+
+    case '1':
+    case 'filter': {
+      const data = await fs.readJSON(fileOwnNames);
+      console.log('Filtering closed names only...');
+      await fs.writeJSON(fileFiltered, filterClosed(data));
+
+      if (!fallthrough)
+        break;
+    }
+
+    case '2':
+    case 'sort': {
+      const data = await fs.readJSON(fileFiltered);
+      console.log('Sorting by expires...');
+      await fs.writeJSON(fileSortedExpires, sortExpires(data));
+
+      console.log('Sorting by transfer request...');
+      await fs.writeJSON(fileInTransferAll, sortFilterTransfers(data));
+
+      if (!fallthrough)
+        break;
+    }
+
+    case '3':
+    case 'filter-time': {
+      const days = config.int(2, 30);
+      const data = await fs.readJSON(fileSortedExpires);
+
+      console.log('Filtering by time...');
+      await fs.writeJSON(fileFilteredTime, {
+        days: days,
+        data: filterDays(data, days)
+      });
+
+      if (!fallthrough)
+        break;
+    }
+
+    case '4':
+    case 'classify': {
+      const {days, data} = await fs.readJSON(fileFilteredTime);
+      console.log('Classifying...');
+
+      const {
+        inTransfer,
+        expired,
+        needsRenew,
+        expiring
+      } = classify(data);
+
+      await fs.writeJSON(fileInTransfer, { days, data: inTransfer });
+      await fs.writeJSON(fileExpired, { days, data: expired });
+      await fs.writeJSON(fileNeedsRenew, { days, data: needsRenew });
+      await fs.writeJSON(fileExpiring, { days, data: expiring });
+
+      if (!fallthrough)
+        break;
+    }
+
+    case 'status': {
+      const needsRenew = await fs.readJSON(fileNeedsRenew);
+      const inTransfer = await fs.readJSON(fileInTransfer);
+      const expired = await fs.readJSON(fileExpired);
+
+      let totalNames = 0;
+
+      totalNames += needsRenew.data.length;
+      totalNames += expired.data.length;
+      totalNames += inTransfer.data.length;
+
+      /* eslint-disable max-len */
+      const out = `
+  Total names expire(d): ${totalNames} in last ${needsRenew.days}.
+   Expired: ${expired.data.length}
+   Requested transfer: ${inTransfer.data.length} - will need cancel->renew, or finalize.
+   Needs renew: ${needsRenew.data.length}`;
+      /* eslint-enable max-len */
+
+      console.log(out);
+      break;
+    }
+  }
+})().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

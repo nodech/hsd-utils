@@ -1,0 +1,16 @@
+#!/usr/bin/env node
+
+'use strict';
+
+const wallet = require('../lib/wallet');
+
+(async () => {
+  const walletClient = wallet.walletClient();
+
+  const wallets = await walletClient.getWallets();
+
+  console.log(wallets.join('\n'));
+})().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
