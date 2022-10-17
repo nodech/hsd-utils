@@ -82,8 +82,8 @@ function help() {
   if (!id)
     help();
 
-  const defaultDir = path.join(os.tmpdir(), `check-expires-${id}`);
-  const dataDir = config.str('data', defaultDir);
+  const dataRoot = config.str('data-dir', os.tmpdir());
+  const dataDir = path.join(dataRoot, `check-expires-${id}`);
   const fileOwnNames = path.join(dataDir, '0-own-names.json');
   const fileFiltered = path.join(dataDir, '1-filter-closed-names.json');
   const fileSortedExpires = path.join(dataDir, '2-sort-expires.json');
@@ -110,7 +110,8 @@ function help() {
     case '0':
     case 'dump': {
       console.log('Getting wallet names...');
-      await fs.writeFile(fileOwnNames, await dumpOwnNames(walletClient, id));
+      const names = await dumpOwnNames(walletClient, id);
+      await fs.writeJSON(fileOwnNames, names);
 
       if (!fallthrough)
         break;
