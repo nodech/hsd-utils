@@ -76,8 +76,7 @@ function help() {
 (async () => {
   const config = cfg.parseConfig();
 
-  const id = config.str(0, 'primary');
-  assert(id, 'please pass id.');
+  const id = config.str(0);
 
   if (!id)
     help();
@@ -87,7 +86,7 @@ function help() {
   const fileOwnNames = path.join(dataDir, '0-own-names.json');
   const fileFiltered = path.join(dataDir, '1-filter-closed-names.json');
   const fileSortedExpires = path.join(dataDir, '2-sort-expires.json');
-  const fileInTransferAll = path.join(dataDir, '2-in-transfer');
+  const fileInTransferAll = path.join(dataDir, '2-in-transfer.json');
 
   const fileFilteredTime = path.join(dataDir, '3-filtered-time.json');
   const fileExpired = path.join(dataDir, '4-expired.json');

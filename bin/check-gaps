@@ -1,0 +1,116 @@
+#!/usr/bin/env node
+
+'use strict';
+
+const hsd = require('hsd');
+const {HDPublicKey} = hsd.hd;
+const {Address} = hsd;
+const cfg = require('../lib/config');
+const wallet = require('../lib/wallet');
+const node = require('../lib/node');
+
+function help() {
+  const help = `./bin/check-gaps WALLET_ID [ACCOUNT] [OPTIONS]
+
+  OPTIONS:
+    --branch      0      - branch (0 receive, 1 change)
+    --max-gap     10000  - expected max gap. (will stop at this gap)
+    --max-depth   0      - max depth to stop. Default unlimited(0)
+    --from-depth  0      - where to start from.
+    --network     main   - network.
+
+  NOTE: Needs full node with addr indexer.
+  `;
+  console.log(help);
+  process.exit(2);
+}
+
+function gapInfo() {
+  return {
+    gap: 0,
+    from: {
+      addr: null,
+      depth: 0
+    },
+    to: {
+      addr: null,
+      depth: 0
+    }
+  };
+}
+
+(async () => {
+  const config = cfg.parseConfig();
+
+  const id = config.str(0);
+
+  if (!id)
+    help();
+
+  const account = config.str(1, 'default');
+  const branch = config.int('branch', 0);
+  const fromDepth = config.uint('from-depth', 0);
+  const maxGap = config.uint('max-gap', 1e4);
+  const maxDepth = config.uint('max-depth', 0);
+  const network = config.str('network', 'main');
+
+  const nodeClient = node.nodeClient();
+  const walletClient = wallet.walletClient();
+
+  const accountInfo = await walletClient.getAccount(id, account);
+  const accountKey = HDPublicKey.fromBase58(accountInfo.accountKey, network);
+
+  console.error(`Checking ${id} for max gap of: ${maxGap}...`);
+
+  const gapInfos = [];
+  let lastKnownDepth = 0;
+  let lastGapInfo = gapInfo();
+
+  let index = fromDepth;
+
+  for (;;) {
+    if (index % 10_000 === 0)
+      console.error(`Progress ${index}...`);
+
+    if (maxDepth && index >= maxDepth) {
+      console.error(`Stopping at max depth: ${maxDepth}.`);
+      gapInfos.push(lastGapInfo);
+      break;
+    }
+
+    const key = accountKey.derive(branch).derive(index);
+    const addr = Address.fromPubkey(key.publicKey).toString(network);
+    const gap = index - lastKnownDepth;
+
+    if (gap >= maxGap) {
+      console.error(`Stopped at ${index}, max gap.`);
+      break;
+    }
+
+    const txs = await nodeClient.getTXByAddress(addr);
+
+    if (txs.length >= 0) {
+      lastKnownDepth = index;
+
+      if (gap > 1) {
+        lastGapInfo.to.addr = addr;
+        lastGapInfo.to.depth = index;
+        lastGapInfo.gap = gap;
+
+        console.error(`${gap} sized gap found at ${index - gap}.`);
+        gapInfos.push(lastGapInfo);
+        lastGapInfo = gapInfo();
+      }
+
+      lastGapInfo.from.addr = addr;
+      lastGapInfo.from.depth = index;
+    }
+
+    index++;
+  }
+
+  console.log(gapInfos);
+})().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
