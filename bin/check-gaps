@@ -61,15 +61,16 @@ function gapInfo() {
   const accountKey = HDPublicKey.fromBase58(accountInfo.accountKey, network);
 
   console.error(`Checking ${id} for max gap of: ${maxGap}...`);
+  console.error(`  branch: ${branch}, from: ${fromDepth}.`);
 
   const gapInfos = [];
-  let lastKnownDepth = 0;
   let lastGapInfo = gapInfo();
 
+  let lastKnownDepth = fromDepth;
   let index = fromDepth;
 
   for (;;) {
-    if (index % 10_000 === 0)
+    if (index % 1e4 === 0)
       console.error(`Progress ${index}...`);
 
     if (maxDepth && index >= maxDepth) {
@@ -89,7 +90,7 @@ function gapInfo() {
 
     const txs = await nodeClient.getTXByAddress(addr);
 
-    if (txs.length >= 0) {
+    if (txs.length > 0) {
       lastKnownDepth = index;
 
       if (gap > 1) {
