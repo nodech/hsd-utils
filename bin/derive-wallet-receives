@@ -1,0 +1,67 @@
+#!/usr/bin/env node
+
+'use strict';
+
+const assert = require('bsert');
+const cfg = require('../lib/config');
+const wallet = require('../lib/wallet');
+
+function help() {
+  const help = `./bin/derive-wallet-addrs WALLET_ID ACCOUNT UNTIL_DEPTH
+
+  OPTIONS:
+    --network     main   - network.
+  `;
+  console.log(help);
+  process.exit(2);
+}
+
+function perc(done, total) {
+  assert(done <= total);
+
+  return (done * 100 / total).toFixed(2);
+}
+
+(async () => {
+  const config = cfg.parseConfig();
+
+  const id = config.str(0);
+  const account = config.str(1);
+  const untilDepth = config.uint(2);
+
+  if (!id || !account || !untilDepth)
+    help();
+
+  const walletClient = wallet.walletClient();
+
+  const accountInfo = await walletClient.getAccount(id, account);
+
+  if (accountInfo.receiveDepth >= untilDepth) {
+    throw new Error(
+      `Already have receive depth higher or equal to ${untilDepth}.`
+    );
+  }
+
+  let done = 0;
+  const total = untilDepth - accountInfo.receiveDepth;
+  const step = Math.floor(Math.min(total / 100, 1000));
+
+  console.log(`Generating ${total} addresses...`);
+
+  for (let i = accountInfo.receiveDepth; i < untilDepth; i++) {
+    await walletClient.createAddress(id, account);
+    done++;
+
+    if (done % step === 0) {
+      console.log(
+        `Generated ${done} of ${total} addresses... (${perc(done, total)}%)`
+      );
+    }
+  }
+
+  const afterInfo = await walletClient.getAccount(id, account);
+  console.log(`New receive depth: ${afterInfo.receiveDepth}.`);
+})().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
