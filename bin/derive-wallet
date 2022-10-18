@@ -7,7 +7,11 @@ const cfg = require('../lib/config');
 const wallet = require('../lib/wallet');
 
 function help() {
-  const help = `./bin/derive-wallet-addrs WALLET_ID ACCOUNT UNTIL_DEPTH
+  const help = `./bin/derive-wallet TYPE WALLET_ID ACCOUNT UNTIL_DEPTH
+
+  TYPES:
+    0 - receive
+    1 - change
 
   OPTIONS:
     --network     main   - network.
@@ -15,6 +19,19 @@ function help() {
   console.log(help);
   process.exit(2);
 }
+
+const types = {
+  '0': {
+    responseKey: 'receiveDepth',
+    name: 'receive',
+    method: 'createAddress'
+  },
+  '1': {
+    responseKey: 'changeDepth',
+    name: 'change',
+    method: 'createChange'
+  }
+};
 
 function perc(done, total) {
   assert(done <= total);
@@ -25,31 +42,37 @@ function perc(done, total) {
 (async () => {
   const config = cfg.parseConfig();
 
-  const id = config.str(0);
-  const account = config.str(1);
-  const untilDepth = config.uint(2);
+  const type = config.uint(0);
+  const id = config.str(1);
+  const account = config.str(2);
+  const untilDepth = config.uint(3);
+
+  if (type < 0 || type > 1)
+    help();
 
   if (!id || !account || !untilDepth)
     help();
 
+  const typeDetails = types[type];
+  const {responseKey, name, method} = typeDetails;
   const walletClient = wallet.walletClient();
 
   const accountInfo = await walletClient.getAccount(id, account);
 
-  if (accountInfo.receiveDepth >= untilDepth) {
+  if (accountInfo[responseKey] >= untilDepth) {
     throw new Error(
-      `Already have receive depth higher or equal to ${untilDepth}.`
+      `Already have ${name} depth higher or equal to ${untilDepth}.`
     );
   }
 
   let done = 0;
-  const total = untilDepth - accountInfo.receiveDepth;
+  const total = untilDepth - accountInfo[responseKey];
   const step = Math.floor(Math.min(total / 100, 1000));
 
   console.log(`Generating ${total} addresses...`);
 
-  for (let i = accountInfo.receiveDepth; i < untilDepth; i++) {
-    await walletClient.createAddress(id, account);
+  for (let i = accountInfo[responseKey]; i < untilDepth; i++) {
+    await walletClient[method](id, account);
     done++;
 
     if (done % step === 0) {
@@ -60,7 +83,7 @@ function perc(done, total) {
   }
 
   const afterInfo = await walletClient.getAccount(id, account);
-  console.log(`New receive depth: ${afterInfo.receiveDepth}.`);
+  console.log(`New ${name} depth: ${afterInfo[responseKey]}.`);
 })().catch((e) => {
   console.error(e);
   process.exit(1);
