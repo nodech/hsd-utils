@@ -1,0 +1,161 @@
+#!/usr/bin/env node
+
+'use strict';
+
+const assert = require('bsert');
+const hsd = require('hsd');
+const fs = require('bfile');
+const blockstore = require('hsd/lib/blockstore');
+const {HDPublicKey} = hsd.hd;
+const {Address, Chain} = hsd;
+const cfg = require('../lib/config');
+
+function help() {
+  const help = `./bin/check-gaps-low CHAIN_PATH XPUB
+
+  OPTIONS:
+    --branch      0      - branch (0 receive, 1 change)
+    --max-gap     10000  - expected max gap. (will stop at this gap)
+    --max-depth   0      - max depth to stop. Default unlimited(0)
+    --from-depth  0      - where to start from.
+    --output      STDOUT - where to put JSON.
+    --network     main   - network.
+    --progress    10000  - progress report to STDERR.
+
+  NOTE: Needs chain with tx-indexer and address-indexer on.
+  `;
+  console.log(help);
+  process.exit(2);
+}
+
+function getMinHeight(txs) {
+  assert(txs.length > 0);
+  let minHeight = txs[0].height;
+
+  for (let i = 1; i < txs.length; i++) {
+    if (txs[i].height < minHeight)
+      minHeight = txs[i].height;
+  }
+
+  return minHeight;
+}
+
+function getGaps(depthBlocks) {
+  depthBlocks.sort((a, b) => {
+    return a[1] - b[1];
+  });
+
+  const from = depthBlocks[0];
+  const gapObj = {
+    gaps: []
+  };
+
+  let maxHeight = from[1];
+  let lastDepth = from[0];
+
+  for (const [derivation, height] of depthBlocks) {
+    // skip transactions from the future.
+    if (height < maxHeight)
+      continue;
+
+    maxHeight = height;
+
+    const gap = derivation - lastDepth;
+
+    if (gap > 1)
+      gapObj.gaps.push([lastDepth, gap]);
+
+    lastDepth = derivation;
+  }
+
+  return gapObj;
+}
+
+(async () => {
+  const config = cfg.parseConfig();
+
+  const chainPath = config.str(0);
+  const xpub = config.str(1);
+
+  if (!chainPath || !xpub)
+    help();
+
+  const branch = config.int('branch', 0);
+  const fromDepth = config.uint('from-depth', 0);
+  const maxGap = config.uint('max-gap', 1e4);
+  const maxDepth = config.uint('max-depth', 0);
+  const network = config.str('network', 'main');
+  const output = config.str('output');
+  const progress = config.uint('progress', 1e4);
+
+  const accountKey = HDPublicKey.fromBase58(xpub, network);
+  const branchKey = accountKey.derive(branch);
+
+  console.error(`Checking for max gap of: ${maxGap}...`);
+  console.error(`  branch: ${branch}, from: ${fromDepth}.`);
+
+  const store = blockstore.create({
+    network: network,
+    prefix: chainPath
+  });
+
+  const chain = new Chain({
+    network: network,
+    prefix: chainPath,
+    blocks: store,
+    memory: false,
+    indexTX: true,
+    indexAddress: true
+  });
+
+  await store.open();
+  await chain.open();
+
+  const depthBlocks = [];
+  let index = fromDepth;
+  let lastKnownDepth = fromDepth;
+
+  for (;;) {
+    if (progress && index % progress === 0)
+      console.error(`Progress ${index}...`);
+
+    if (maxDepth && index >= maxDepth) {
+      console.error(`Stopping at max depth: ${maxDepth}.`);
+      break;
+    }
+
+    const addr = Address.fromPubkey(branchKey.derive(index).publicKey);
+    const gap = index - lastKnownDepth;
+
+    if (gap >= maxGap) {
+      console.error(`Stopped at ${index}, max gap.`);
+      break;
+    }
+
+    const txs = await chain.getMetaByAddress(addr);
+
+    if (txs.length > 0) {
+      lastKnownDepth = index;
+      const minHeight = getMinHeight(txs);
+      depthBlocks.push([index, minHeight]);
+    }
+
+    index++;
+  }
+
+  const gapInfos = getGaps(depthBlocks);
+  const str = JSON.stringify(gapInfos, null, 2);
+
+  if (!output)
+    console.log(str);
+
+  if (output)
+    await fs.writeJSON(output, str);
+
+  await store.close();
+  await chain.close();
+})().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
+

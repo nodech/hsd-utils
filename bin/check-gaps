@@ -3,6 +3,7 @@
 'use strict';
 
 const hsd = require('hsd');
+const fs = require('bfile');
 const {HDPublicKey} = hsd.hd;
 const {Address} = hsd;
 const cfg = require('../lib/config');
@@ -17,6 +18,7 @@ function help() {
     --max-gap     10000  - expected max gap. (will stop at this gap)
     --max-depth   0      - max depth to stop. Default unlimited(0)
     --from-depth  0      - where to start from.
+    --output      STDOUT - where to put JSON.
     --network     main   - network.
 
   NOTE: Needs full node with addr indexer.
@@ -53,6 +55,7 @@ function gapInfo() {
   const maxGap = config.uint('max-gap', 1e4);
   const maxDepth = config.uint('max-depth', 0);
   const network = config.str('network', 'main');
+  const output = config.str('output', null);
 
   const nodeClient = node.nodeClient();
   const walletClient = wallet.walletClient();
@@ -89,6 +92,7 @@ function gapInfo() {
     }
 
     const txs = await nodeClient.getTXByAddress(addr);
+    console.log(txs);
 
     if (txs.length > 0) {
       lastKnownDepth = index;
@@ -110,7 +114,13 @@ function gapInfo() {
     index++;
   }
 
-  console.log(gapInfos);
+  const str = JSON.stringify(gapInfos, null, 2);
+
+  if (!output)
+    console.log(str);
+
+  if (output)
+    await fs.writeJSON(output, str);
 })().catch((e) => {
   console.error(e);
   process.exit(1);

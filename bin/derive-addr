@@ -1,0 +1,37 @@
+#!/usr/bin/env node
+
+'use strict';
+
+const hsd = require('hsd');
+const {HDPublicKey} = hsd.hd;
+const {Address} = hsd;
+const cfg = require('../lib/config');
+
+function help() {
+  const help = `./bin/derive-addr ACCOUNT_KEY [BRANCH [INDEX]]
+
+  OPTIONS:
+    --network     main   - network.
+  `;
+  console.log(help);
+  process.exit(2);
+}
+
+(async () => {
+  const config = cfg.parseConfig();
+  const xpub = config.str(0);
+  const branch = config.uint(1, 0);
+  const index = config.uint(2, 0);
+
+  if (!xpub)
+    help();
+
+  const network = config.str('network', 'main');
+  const key = HDPublicKey.fromBase58(xpub, network);
+  const derivedKey = key.derive(branch).derive(index);
+
+  console.log(Address.fromPubkey(derivedKey.publicKey).toString(network));
+})().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
