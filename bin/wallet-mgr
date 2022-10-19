@@ -1,0 +1,68 @@
+#!/usr/bin/env node
+
+'use strict';
+
+const cfg = require('../lib/config');
+const wallet = require('../lib/wallet');
+const fs = require('bfile');
+
+function help(msg) {
+  const help = `./bin/derive-mgr ACTION WALLET_ID FILE
+
+  ACTION:
+    export - export key.
+    import - import key.
+
+  OPTIONS:
+    --network     main   - network.
+  `;
+
+  if (msg)
+    console.error(msg);
+
+  console.error(help);
+  process.exit(2);
+}
+
+// TODO: dump all account depths for recovery.
+// TODO: Support watchOnly account/wallets.
+(async () => {
+  const config = cfg.parseConfig();
+
+  const action = config.str(0, 'export').toLowerCase();
+  const id = config.str(1);
+  const out = config.str(2, 'key.json');
+
+  if (!id)
+    help('Could not find wallet id.');
+
+  if (!out)
+    help('Could not find output file.');
+
+  const walletClient = wallet.walletClient();
+
+  switch (action) {
+    case 'export': {
+      const master = await walletClient.getMaster(id);
+      await fs.writeJSON(out, master);
+      console.error(`Exported info of ${id} to ${out}.`);
+      break;
+    }
+    case 'import': {
+      const info = await fs.readJSON(out);
+
+      const walletDetails = await walletClient.createWallet(id, {
+        master: info.key.xprivkey
+      });
+
+      console.error(`Created wallet ${id} from ${out}.`);
+      console.error(walletDetails);
+      break;
+    }
+    default:
+      help(`Unknown action ${action}.`);
+  }
+})().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
