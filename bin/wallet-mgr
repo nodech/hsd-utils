@@ -31,7 +31,7 @@ function help(msg) {
 
   const action = config.str(0, 'export').toLowerCase();
   const id = config.str(1);
-  const out = config.str(2, 'key.json');
+  const out = config.str(2, `${id}.json`);
 
   if (!id)
     help('Could not find wallet id.');
