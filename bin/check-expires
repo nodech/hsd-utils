@@ -158,7 +158,7 @@ function help() {
 
     case '1':
     case 'filter': {
-      const data = await readJSON(fileOwnNames);
+      const data = await readJSON(fileOwnNames, true);
       console.log('Filtering closed names only...');
       await writeJSON(fileFiltered, filterClosed(data), true);
 
@@ -168,7 +168,7 @@ function help() {
 
     case '2':
     case 'sort': {
-      const data = await readJSON(fileFiltered);
+      const data = await readJSON(fileFiltered, true);
       console.log('Sorting by expires...');
       await writeJSON(fileSortedExpires, sortExpires(data), true);
 
@@ -182,7 +182,7 @@ function help() {
     case '3':
     case 'filter-time': {
       const days = config.int(2, 30);
-      const data = await fs.readJSON(fileSortedExpires);
+      const data = await readJSON(fileSortedExpires, true);
 
       console.log('Filtering by time...');
       await writeJSON(fileFilteredTime, {
