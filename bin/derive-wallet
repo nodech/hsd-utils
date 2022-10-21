@@ -55,7 +55,7 @@ function perc(done, total) {
 
   const typeDetails = types[type];
   const {responseKey, name, method} = typeDetails;
-  const walletClient = wallet.walletClient();
+  const walletClient = wallet.client();
 
   const accountInfo = await walletClient.getAccount(id, account);
 

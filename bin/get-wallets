@@ -5,7 +5,7 @@
 const wallet = require('../lib/wallet');
 
 (async () => {
-  const walletClient = wallet.walletClient();
+  const walletClient = wallet.client();
 
   const wallets = await walletClient.getWallets();
 

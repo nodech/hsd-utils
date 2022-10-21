@@ -39,11 +39,15 @@ function help(msg) {
   if (!out)
     help('Could not find output file.');
 
-  const walletClient = wallet.walletClient();
+  const walletClient = wallet.client();
 
   switch (action) {
     case 'export': {
       const master = await walletClient.getMaster(id);
+
+      if (master == null)
+        throw new Error(`Could not find wallet ${id}.`);
+
       await fs.writeJSON(out, master);
       console.error(`Exported info of ${id} to ${out}.`);
       break;
