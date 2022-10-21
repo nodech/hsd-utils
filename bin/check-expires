@@ -20,7 +20,12 @@ async function hasPlugin(client) {
 }
 
 async function dumpOwnNamesPlug(client, id) {
-  const res = await wallet.request(client, 'GET', `/wallet/${id}/dump-names`);
+  const res = await wallet.request(
+    client,
+    'GET',
+    `/wallet/${id}/dump-names`,
+    { own: true }
+  );
 
   if (!res)
     throw new Error('Could not find plugin endpoint.');
