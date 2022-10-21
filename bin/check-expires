@@ -3,14 +3,41 @@
 'use strict';
 
 const assert = require('bsert');
-const cfg = require('../lib/config');
-const wallet = require('../lib/wallet');
 const os = require('os');
 const path = require('path');
 const fs = require('bfile');
+const cfg = require('../lib/config');
+const wallet = require('../lib/wallet');
+const util = require('../lib/util');
+
+async function hasPlugin(client) {
+  const res = await client.get('/has-names-plugin');
+
+  if (!res)
+    return null;
+
+  return res.has;
+}
+
+async function dumpOwnNamesPlug(client, id) {
+  const res = await wallet.request(client, 'GET', `/wallet/${id}/dump-names`);
+
+  if (!res)
+    throw new Error('Could not find plugin endpoint.');
+
+  return util.decodeJSONarr(res.buffer(), true);
+}
 
 async function dumpOwnNames(client, id) {
   return await client.get(`/wallet/${id}/name`, { own: true });
+}
+
+async function writeJSON(file, arr, lines) {
+  return fs.writeFile(file, util.encodeJSONarr(arr, lines));
+}
+
+async function readJSON(file, lines) {
+  return util.decodeJSONarr(await fs.readFile(file), lines);
 }
 
 function filterClosed(from) {
@@ -98,7 +125,7 @@ function help() {
 
   const step = config.str(1, 'all');
 
-  const walletClient = wallet.walletClient();
+  const walletClient = wallet.client();
 
   let fallthrough = config.bool(3, false);
 
@@ -109,8 +136,16 @@ function help() {
     case '0':
     case 'dump': {
       console.log('Getting wallet names...');
-      const names = await dumpOwnNames(walletClient, id);
-      await fs.writeJSON(fileOwnNames, names);
+
+      let names;
+      if (!await hasPlugin(walletClient)) {
+        console.warn('Getting names w/o plugin, may fail for big wallets.');
+        names = await dumpOwnNames(walletClient, id);
+      } else {
+        names = await dumpOwnNamesPlug(walletClient, id);
+      }
+
+      await writeJSON(fileOwnNames, names, true);
 
       if (!fallthrough)
         break;
@@ -118,9 +153,9 @@ function help() {
 
     case '1':
     case 'filter': {
-      const data = await fs.readJSON(fileOwnNames);
+      const data = await readJSON(fileOwnNames);
       console.log('Filtering closed names only...');
-      await fs.writeJSON(fileFiltered, filterClosed(data));
+      await writeJSON(fileFiltered, filterClosed(data), true);
 
       if (!fallthrough)
         break;
@@ -128,12 +163,12 @@ function help() {
 
     case '2':
     case 'sort': {
-      const data = await fs.readJSON(fileFiltered);
+      const data = await readJSON(fileFiltered);
       console.log('Sorting by expires...');
-      await fs.writeJSON(fileSortedExpires, sortExpires(data));
+      await writeJSON(fileSortedExpires, sortExpires(data), true);
 
       console.log('Sorting by transfer request...');
-      await fs.writeJSON(fileInTransferAll, sortFilterTransfers(data));
+      await writeJSON(fileInTransferAll, sortFilterTransfers(data), true);
 
       if (!fallthrough)
         break;
@@ -145,10 +180,10 @@ function help() {
       const data = await fs.readJSON(fileSortedExpires);
 
       console.log('Filtering by time...');
-      await fs.writeJSON(fileFilteredTime, {
+      await writeJSON(fileFilteredTime, {
         days: days,
         data: filterDays(data, days)
-      });
+      }, false);
 
       if (!fallthrough)
         break;
@@ -156,7 +191,7 @@ function help() {
 
     case '4':
     case 'classify': {
-      const {days, data} = await fs.readJSON(fileFilteredTime);
+      const {days, data} = await readJSON(fileFilteredTime, false);
       console.log('Classifying...');
 
       const {
@@ -166,19 +201,19 @@ function help() {
         expiring
       } = classify(data);
 
-      await fs.writeJSON(fileInTransfer, { days, data: inTransfer });
-      await fs.writeJSON(fileExpired, { days, data: expired });
-      await fs.writeJSON(fileNeedsRenew, { days, data: needsRenew });
-      await fs.writeJSON(fileExpiring, { days, data: expiring });
+      await writeJSON(fileInTransfer, { days, data: inTransfer }, false);
+      await writeJSON(fileExpired, { days, data: expired }, false);
+      await writeJSON(fileNeedsRenew, { days, data: needsRenew }, false);
+      await writeJSON(fileExpiring, { days, data: expiring }, false);
 
       if (!fallthrough)
         break;
     }
 
     case 'status': {
-      const needsRenew = await fs.readJSON(fileNeedsRenew);
-      const inTransfer = await fs.readJSON(fileInTransfer);
-      const expired = await fs.readJSON(fileExpired);
+      const needsRenew = await readJSON(fileNeedsRenew, false);
+      const inTransfer = await readJSON(fileInTransfer, false);
+      const expired = await readJSON(fileExpired, false);
 
       let totalNames = 0;
 
