@@ -72,7 +72,7 @@ function help() {
       const coinsFile = common.coinsDumpFile(dataRoot, id, account);
       await fs.mkdirp(coinsDir);
 
-      console.error('Dumping names...');
+      console.error('Dumping coins...');
 
       let coins;
       if (hasPlugin)
