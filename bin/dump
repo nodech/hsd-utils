@@ -1,0 +1,94 @@
+#!/usr/bin/env node
+
+'use strict';
+
+const os = require('os');
+const fs = require('bfile');
+const cfg = require('../lib/config');
+const common = require('../lib/common');
+const wallet = require('../lib/wallet');
+const {writeJSON} = require('../lib/util');
+
+function help() {
+  const help = `./bin/dump COMMAND WALLET_ID [ACCOUNT] [OPTIONS]
+  COMMANDS:
+    names
+    coins - supports account.
+
+  OPTIONS:
+    --data-dir - directory to dump names to.
+
+  HSD CLIENT OPTIONS
+    --network  - network name
+    ...
+  `;
+
+  console.error(help);
+  process.exit(2);
+}
+
+(async () => {
+  const config = cfg.parseConfig();
+  const cmd = config.str(0);
+  const id = config.str(1);
+
+  if (!id || !cmd)
+    help();
+
+  const dataRoot = config.str('data-dir', os.tmpdir());
+  const client = wallet.client();
+
+  console.error('Checking wallet plugin...');
+  const hasPlugin = await wallet.hasDumpPlugin(client);
+
+  if (!hasPlugin)
+    console.warn('Dumping information w/o plugin, may fail for big responses.');
+
+  switch (cmd) {
+    case 'names': {
+      const namesDir = common.namesDumpDir(dataRoot, id);
+      const namesFile = common.namesDumpFile(dataRoot, id);
+      await fs.mkdirp(namesDir);
+
+      console.error('Dumping names...');
+
+      let names;
+      if (hasPlugin)
+        names = await wallet.dumpOwnNamesPlug(client, id);
+      else
+        names = await wallet.dumpOwnNames(client, id);
+
+      if (!names)
+        throw new Error(`Could not find wallet "${id}"`);
+      console.error(`${names.length} names have been dumped...`);
+      await writeJSON(namesFile, names, true);
+      console.log(namesFile);
+      break;
+    }
+
+    case 'coins': {
+      const account = config.str(2);
+      const coinsDir = common.coinsDumpDir(dataRoot, id);
+      const coinsFile = common.coinsDumpFile(dataRoot, id, account);
+      await fs.mkdirp(coinsDir);
+
+      console.error('Dumping names...');
+
+      let coins;
+      if (hasPlugin)
+        coins = await wallet.dumpCoinsPlug(client, id);
+      else
+        coins = await wallet.dumpCoins(client, id);
+
+      console.error(`${coins.length} coins have been dumped...`);
+      await writeJSON(coinsFile, coins, true);
+      console.log(coinsFile);
+      break;
+    }
+    default:
+      throw new Error(`Could not find command: ${cmd}.`);
+  }
+})().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
