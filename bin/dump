@@ -60,6 +60,7 @@ function help() {
 
       if (!names)
         throw new Error(`Could not find wallet "${id}"`);
+
       console.error(`${names.length} names have been dumped...`);
       await writeJSON(namesFile, names, true);
       console.log(namesFile);
