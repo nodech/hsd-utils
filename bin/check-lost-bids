@@ -2,7 +2,6 @@
 
 'use strict';
 
-const assert = require('bsert');
 const os = require('os');
 const path = require('path');
 const fs = require('bfile');
@@ -11,9 +10,9 @@ const cfg = require('../lib/config');
 const {writeJSON, readJSON, spawn} = require('../lib/util');
 
 function help() {
-  const help = `./bin/check-reveals WALLET_ID [CONTINUE] [OPTIONS]
+  const help = `./bin/check-lost-bids WALLET_ID [CONTINUE] [OPTIONS]
   OPTIONS:
-    --all do from 0 to 4.
+    --all do from STEP to 4.
 
   STEPS:
 
@@ -36,7 +35,7 @@ function help() {
     help();
 
   const dataRoot = config.str('data-dir', os.tmpdir());
-  const dataDir = path.join(dataRoot, `check-reveals-${id}`);
+  const dataDir = path.join(dataRoot, `check-lost-bids-${id}`);
   const fileCoins = common.coinsDumpFile(dataRoot, id);
   const fileFiltered = path.join(dataDir, '1-filter-bid-utxos.json');
   const fileByHeight = path.join(dataDir, '2-sorted-by-height.json');
@@ -45,7 +44,7 @@ function help() {
 
   const step = config.str(1, 'all');
 
-  let fallthrough = config.bool([3, 'all'], false);
+  let fallthrough = config.bool('all', false);
 
   switch (step) {
     case '0':

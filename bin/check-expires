@@ -55,18 +55,16 @@ function classify(from) {
 function help() {
   const help = `./bin/check-expires WALLET_ID STEP [DAYS [CONTINUE]] [OPTIONS]
   OPTIONS:
-    --all   - do step from 0 to 4.
+    --all - Do every step from STEP to the last.
 
   STEPS:
-    0, dump: get wallet own names from wallet (big wallet request)
-    1, filter: filter closed names (auction state)
-    2, sort: sort names by expires and list all transfer locks.
-    3, filter-time: filter names by expire time (in days).
-    4, classify: classify filtered name into: expired, in-transfer, needs-renew
-
-  Diff STEPS:
-    all: Do all steps from 1 to 4.
-    status: get summary of classified data.
+    0, dump: Get wallet own names from wallet. (big wallet request)
+    1, filter: Filter closed names (auction state).
+    2, sort: Sort names by expires and list all transfer locks.
+    3, filter-time: Filter names by expire time (in days).
+    4, classify: Classify filtered name into: expired, in-transfer, needs-renew.
+    status: Get last expires status.
+    all: Do all steps from 1 to 4. (not 0)
   `;
 
   console.log(help);
@@ -98,7 +96,7 @@ function help() {
 
   const step = config.str(1, 'all');
 
-  let fallthrough = config.bool([3, 'all'], false);
+  let fallthrough = config.bool('all', false);
 
   switch (step) {
     case '0':

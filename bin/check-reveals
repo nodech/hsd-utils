@@ -11,16 +11,17 @@ const {writeJSON, readJSON, spawn} = require('../lib/util');
 const wallet = require('../lib/wallet');
 
 function help() {
-  const help = `./bin/check-reveals WALLET_ID [CONTINUE] [OPTIONS]
+  const help = `./bin/check-reveals WALLET_ID [STEP [CONTINUE]] [OPTIONS]
   OPTIONS:
-    --all do from 0 to 4.
+    --all - Do every step from STEP to the last.
 
   STEPS:
-
-
-  Diff STEPS:
-    all: Do steps from 1 to 4. (exc 0)
-    status: get summary of classified data.
+    0, dump: Get wallet own names from wallet (big wallet request)
+    1, filter: Filter auctions in REVEAL state.
+    2, sort: Sort auctions by hours until closed.
+    3, check-reveals: Check auction bids are revealed.
+    status: Get last reveals check status.
+    all: Do steps from 1 to 3. (not 0)
   `;
 
   console.error(help);
@@ -48,7 +49,7 @@ function help() {
 
   const step = config.str(1, 'all');
 
-  let fallthrough = config.bool([3, 'all'], false);
+  let fallthrough = config.bool('all', false);
 
   switch (step) {
     case '0':
@@ -69,7 +70,7 @@ function help() {
     case '1':
     case 'filter': {
       const data = await readJSON(fileOwnNames, true);
-      console.log('Filter names in reveal');
+      console.log('Filtering names in reveal...');
       const filtered = data.filter(d => d.state === 'REVEAL');
       await writeJSON(fileFiltered, filtered, true);
 
@@ -106,7 +107,7 @@ function help() {
         const bids = new Map();
 
         if (auction.state !== 'REVEAL')
-          console.log('names dump has expired:', auction.name, auction.state);
+          console.log('Names dump has expired:', auction.name, auction.state);
 
         for (const bid of auction.bids) {
           if (bid.own === false)
@@ -149,7 +150,7 @@ function help() {
     }
 
     case 'status': {
-      const revealed = await readJSON(fileNeedsReveals, true);
+      const revealed = await readJSON(fileRevealed, true);
       const needsReveals = await readJSON(fileNeedsReveals, true);
 
       console.log(`
