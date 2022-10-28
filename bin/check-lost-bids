@@ -1,0 +1,106 @@
+#!/usr/bin/env node
+
+'use strict';
+
+const assert = require('bsert');
+const os = require('os');
+const path = require('path');
+const fs = require('bfile');
+const common = require('../lib/common');
+const cfg = require('../lib/config');
+const {writeJSON, readJSON, spawn} = require('../lib/util');
+
+function help() {
+  const help = `./bin/check-reveals WALLET_ID [CONTINUE] [OPTIONS]
+  OPTIONS:
+    --all do from 0 to 4.
+
+  STEPS:
+
+
+  Diff STEPS:
+    all: Do steps from 1 to 4. (exc 0)
+    status: get summary of classified data.
+  `;
+
+  console.error(help);
+  process.exit(2);
+}
+
+(async () => {
+  const config = cfg.parse();
+
+  const id = config.str(0);
+
+  if (!id)
+    help();
+
+  const dataRoot = config.str('data-dir', os.tmpdir());
+  const dataDir = path.join(dataRoot, `check-reveals-${id}`);
+  const fileCoins = common.coinsDumpFile(dataRoot, id);
+  const fileFiltered = path.join(dataDir, '1-filter-bid-utxos.json');
+  const fileByHeight = path.join(dataDir, '2-sorted-by-height.json');
+
+  await fs.mkdirp(dataDir);
+
+  const step = config.str(1, 'all');
+
+  let fallthrough = config.bool([3, 'all'], false);
+
+  switch (step) {
+    case '0':
+    case 'dump': {
+      console.log('Getting wallet names...');
+
+      const env = cfg.configToENV(config);
+
+      await Promise.all([
+        spawn(common.execs.dumpBlockTimes, null, { env }),
+        spawn(common.execs.dump, ['names', id], { env })
+      ]);
+
+      if (!fallthrough)
+        break;
+    }
+
+    case 'all':
+      fallthrough = true;
+
+    case '1':
+    case 'filter': {
+      const data = await readJSON(fileCoins, true);
+      console.log('Filtering BID utxos...');
+
+      // filter out mempool bids.
+      const filtered = data.filter((d) => {
+        return d.covenant.action === 'BID' && d.height !== -1;
+      });
+
+      await writeJSON(fileFiltered, filtered, true);
+
+      if (!fallthrough)
+        break;
+    }
+
+    case '2':
+    case 'sort': {
+      const data = await readJSON(fileFiltered, true);
+      console.log('Sorting by height...');
+
+      data.sort((a, b) => {
+        return b.height - a.height;
+      });
+      await writeJSON(fileByHeight, data, true);
+
+      if (!fallthrough)
+        break;
+    }
+
+    case 'status': {
+      throw new Error('NO STAT');
+    }
+  }
+})().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

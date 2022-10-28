@@ -1,0 +1,82 @@
+#!/usr/bin/env node
+
+'use strict';
+
+const os = require('os');
+const fs = require('bfile');
+const cfg = require('../lib/config');
+const node = require('../lib/node');
+const common = require('../lib/common');
+const {readJSON, writeJSON} = require('../lib/util');
+
+function help() {
+  const help = `./bin/dump-blocktimes [OPTIONS]
+  Dumps blocktimes by block height.
+
+  OPTIONS:
+    --data-dir   - data directory.
+    --force      - overwrite existing data.
+    --help       - show help.
+  `;
+
+  console.error(help);
+  process.exit(2);
+}
+
+(async () => {
+  const config = cfg.parse();
+  const client = node.client();
+
+  const dataRoot = config.str('data-dir', os.tmpdir());
+  const force = config.bool('force', false);
+  const showHelp = config.bool('help', false);
+  const file = common.blocktimesFile(dataRoot);
+
+  if (showHelp)
+    help();
+
+  await fs.mkdirp(dataRoot);
+
+  let blockTimes = [];
+
+  if (!force && await fs.exists(file))
+    blockTimes = await readJSON(file);
+
+  const from = blockTimes.length;
+
+  const getHeight = async () => {
+    const info = await client.getInfo();
+    return info.chain.height;
+  };
+
+  const collectTimes = async (from, to) => {
+    const total = to - from;
+    const step = Math.floor(Math.min(total / 100, 1000));
+
+    for (let i = from, done = 0; i < to; i++, done++) {
+      const header = await client.getBlockHeader(i);
+      blockTimes[i] = header.time;
+
+      if (done % step === 0) {
+        const perc = (done * 100 / total).toFixed(2);
+        console.log(`Collected ${done} of ${total} block times... (${perc}%)`);
+      }
+    }
+  };
+
+  let currentHeight = await getHeight();
+  let lastHeight = from;
+
+  console.log(`Collecting ${currentHeight - lastHeight} block times...`);
+  while (lastHeight < currentHeight) {
+    await collectTimes(from, currentHeight);
+
+    lastHeight = currentHeight;
+    currentHeight = await getHeight();
+  }
+
+  await writeJSON(file, blockTimes);
+})().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

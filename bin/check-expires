@@ -8,7 +8,7 @@ const path = require('path');
 const fs = require('bfile');
 const common = require('../lib/common');
 const cfg = require('../lib/config');
-const {writeJSON, readJSON, exec} = require('../lib/util');
+const {writeJSON, readJSON, spawn} = require('../lib/util');
 
 function filterClosed(from) {
   return from.filter(d => d.state === 'CLOSED');
@@ -105,11 +105,9 @@ function help() {
     case 'dump': {
       console.log('Getting wallet names...');
 
-      const out = await exec([path.join(common.BIN, 'dump'), `names ${id}`], {
+      await spawn(common.execs.dump, ['names', id], {
         env: cfg.configToENV(config)
       });
-
-      console.log(out);
 
       if (!fallthrough)
         break;
