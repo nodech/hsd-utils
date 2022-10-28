@@ -51,7 +51,7 @@ function help() {
 
   const collectTimes = async (from, to) => {
     const total = to - from;
-    const step = Math.floor(Math.min(total / 100, 1000));
+    const step = Math.floor(Math.min(total / 100, 10000));
 
     for (let i = from, done = 0; i < to; i++, done++) {
       const header = await client.getBlockHeader(i);

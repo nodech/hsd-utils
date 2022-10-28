@@ -56,7 +56,7 @@ function help() {
 
       await Promise.all([
         spawn(common.execs.dumpBlockTimes, null, { env }),
-        spawn(common.execs.dump, ['names', id], { env })
+        spawn(common.execs.dump, ['coins', id], { env })
       ]);
 
       if (!fallthrough)
