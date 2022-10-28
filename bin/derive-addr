@@ -18,7 +18,7 @@ function help() {
 }
 
 (async () => {
-  const config = cfg.parseConfig();
+  const config = cfg.parse();
   const xpub = config.str(0);
   const branch = config.uint(1, 0);
   const index = config.uint(2, 0);

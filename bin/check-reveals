@@ -2,7 +2,6 @@
 
 'use strict';
 
-const assert = require('bsert');
 const os = require('os');
 const path = require('path');
 const fs = require('bfile');
@@ -24,12 +23,12 @@ function help() {
     status: get summary of classified data.
   `;
 
-  console.log(help);
+  console.error(help);
   process.exit(2);
 }
 
 (async () => {
-  const config = cfg.parseConfig();
+  const config = cfg.parse();
 
   const id = config.str(0);
 
@@ -98,7 +97,7 @@ function help() {
     case 'check-reveals': {
       const data = await readJSON(fileByHoursClosed, true);
 
-      console.log('Gathering utxos...');
+      console.log('Gathering auction information...');
 
       const revealed = [];
       const needsReveals = [];
@@ -107,6 +106,9 @@ function help() {
         const name = info.name;
         const auction = await wallet.getAuctionInfo(client, id, name);
         const bids = new Map();
+
+        if (auction.state !== 'REVEAL')
+          console.log('names dump has expired:', auction.name, auction.state);
 
         for (const bid of auction.bids) {
           if (bid.own === false)

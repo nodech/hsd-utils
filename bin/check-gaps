@@ -42,7 +42,7 @@ function gapInfo() {
 }
 
 (async () => {
-  const config = cfg.parseConfig();
+  const config = cfg.parse();
 
   const id = config.str(0);
 

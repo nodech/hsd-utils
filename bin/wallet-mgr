@@ -27,7 +27,7 @@ function help(msg) {
 // TODO: dump all account depths for recovery.
 // TODO: Support watchOnly account/wallets.
 (async () => {
-  const config = cfg.parseConfig();
+  const config = cfg.parse();
 
   const action = config.str(0, 'export').toLowerCase();
   const id = config.str(1);

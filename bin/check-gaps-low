@@ -72,7 +72,7 @@ function getGaps(depthBlocks) {
 }
 
 (async () => {
-  const config = cfg.parseConfig();
+  const config = cfg.parse();
 
   const chainPath = config.str(0);
   const xpub = config.str(1);

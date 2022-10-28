@@ -40,7 +40,7 @@ function perc(done, total) {
 }
 
 (async () => {
-  const config = cfg.parseConfig();
+  const config = cfg.parse();
 
   const type = config.uint(0);
   const id = config.str(1);

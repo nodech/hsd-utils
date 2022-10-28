@@ -28,7 +28,7 @@ function help() {
 }
 
 (async () => {
-  const config = cfg.parseConfig();
+  const config = cfg.parse();
   const cmd = config.str(0);
   const id = config.str(1);
 
