@@ -53,7 +53,7 @@ function classify(from) {
 }
 
 function help() {
-  const help = `./bin/check-expires WALLET_ID STEP [DAYS [CONTINUE]] [OPTIONS]
+  const help = `./bin/check-expires WALLET_ID STEP [DAYS] [OPTIONS]
   OPTIONS:
     --all - Do every step from STEP to the last.
 

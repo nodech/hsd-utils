@@ -7,10 +7,12 @@ const path = require('path');
 const fs = require('bfile');
 const common = require('../lib/common');
 const cfg = require('../lib/config');
+const node = require('../lib/node');
 const {writeJSON, readJSON, spawn} = require('../lib/util');
+const {Network} = require('hsd');
 
 function help() {
-  const help = `./bin/check-lost-bids WALLET_ID [CONTINUE] [OPTIONS]
+  const help = `./bin/check-lost-bids WALLET_ID STEP [OPTIONS]
   OPTIONS:
     --all do from STEP to 4.
 
@@ -42,8 +44,16 @@ function help() {
 
   await fs.mkdirp(dataDir);
 
-  const step = config.str(1, 'all');
+  const network = Network.get(config.get('network', 'main'));
+  const client = node.client();
+  let currentTipHeight = config.int(2, -1);
 
+  if (currentTipHeight === -1)
+    currentTipHeight = (await client.getInfo()).chain.height;
+
+  const lastBids = currentTipHeight - network.names.revealPeriod;
+
+  const step = config.str(1, 'all');
   let fallthrough = config.bool('all', false);
 
   switch (step) {
@@ -68,11 +78,17 @@ function help() {
     case '1':
     case 'filter': {
       const data = await readJSON(fileCoins, true);
-      console.log('Filtering BID utxos...');
+      console.log(`Filtering BID utxos before ${lastBids}...`);
 
       // filter out mempool bids.
       const filtered = data.filter((d) => {
-        return d.covenant.action === 'BID' && d.height !== -1;
+        if (d.covenant.action !== 'BID')
+          return false;
+
+        if (d.height === -1 || d.height >= lastBids)
+          return false;
+
+        return true;
       });
 
       await writeJSON(fileFiltered, filtered, true);

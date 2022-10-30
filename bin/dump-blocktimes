@@ -60,6 +60,7 @@ function help() {
       if (done % step === 0) {
         const perc = (done * 100 / total).toFixed(2);
         console.log(`Collected ${done} of ${total} block times... (${perc}%)`);
+        await writeJSON(file, blockTimes);
       }
     }
   };
@@ -69,7 +70,7 @@ function help() {
 
   console.log(`Collecting ${currentHeight - lastHeight} block times...`);
   while (lastHeight < currentHeight) {
-    await collectTimes(from, currentHeight);
+    await collectTimes(lastHeight, currentHeight);
 
     lastHeight = currentHeight;
     currentHeight = await getHeight();
