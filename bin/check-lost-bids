@@ -39,8 +39,11 @@ function help() {
   const dataRoot = config.str('data-dir', os.tmpdir());
   const dataDir = path.join(dataRoot, `check-lost-bids-${id}`);
   const fileCoins = common.coinsDumpFile(dataRoot, id);
-  const fileFiltered = path.join(dataDir, '1-filter-bid-utxos.json');
+  const fileLost = path.join(dataDir, '1-filter-lost-utxos.json');
+  const fileNeedsReveal = path.join(dataDir, '1-filter-needs-reveal.json');
   const fileByHeight = path.join(dataDir, '2-sorted-by-height.json');
+  const fileRevealByHeight = path.join(dataDir,
+                                       '2-sorted-by-height-reveal.json');
 
   await fs.mkdirp(dataDir);
 
@@ -78,20 +81,30 @@ function help() {
     case '1':
     case 'filter': {
       const data = await readJSON(fileCoins, true);
+      console.log(`Current tip: ${currentTipHeight}.`);
       console.log(`Filtering BID utxos before ${lastBids}...`);
 
-      // filter out mempool bids.
-      const filtered = data.filter((d) => {
-        if (d.covenant.action !== 'BID')
-          return false;
+      const lost = [];
+      const needsReveal = [];
 
-        if (d.height === -1 || d.height >= lastBids)
-          return false;
+      for (const coin of data) {
+        if (coin.covenant.action !== 'BID')
+          continue;
 
-        return true;
-      });
+        // mempool
+        if (coin.height === -1)
+          continue;
 
-      await writeJSON(fileFiltered, filtered, true);
+        if (coin.height > lastBids) {
+          needsReveal.push(coin);
+          continue;
+        }
+
+        lost.push(coin);
+      }
+
+      await writeJSON(fileLost, lost, true);
+      await writeJSON(fileNeedsReveal, needsReveal, true);
 
       if (!fallthrough)
         break;
@@ -99,13 +112,19 @@ function help() {
 
     case '2':
     case 'sort': {
-      const data = await readJSON(fileFiltered, true);
+      const dataLost = await readJSON(fileLost, true);
+      const dataReveals = await readJSON(fileNeedsReveal, true);
       console.log('Sorting by height...');
 
-      data.sort((a, b) => {
+      const sort = (a, b) => {
         return b.height - a.height;
-      });
-      await writeJSON(fileByHeight, data, true);
+      };
+
+      dataLost.sort(sort);
+      dataReveals.sort(sort);
+
+      await writeJSON(fileByHeight, dataLost, true);
+      await writeJSON(fileRevealByHeight, dataReveals, true);
 
       if (!fallthrough)
         break;
