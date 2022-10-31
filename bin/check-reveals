@@ -104,42 +104,29 @@ function help() {
       for (const info of data) {
         const name = info.name;
         const auction = await wallet.getAuctionInfo(client, id, name);
-        const bids = new Map();
 
         if (auction.state !== 'REVEAL')
           console.log('Names dump has expired:', auction.name, auction.state);
 
+        let needsReveal = 0;
         for (const bid of auction.bids) {
           if (bid.own === false)
             continue;
 
-          bids.set(toKey(bid), false);
+          needsReveal++;
         }
 
-        for (const reveal of auction.bids) {
+        for (const reveal of auction.reveals) {
           if (reveal.own === false)
             continue;
 
-          const key = toKey(reveal);
-
-          if (!bids.has(key))
-            throw new Error('Data inconsistency.');
-
-          bids.set(key, true);
+          needsReveal--;
         }
 
-        let consistent = true;
-        for (const r of bids.values()) {
-          if (!r) {
-            consistent = false;
-            break;
-          }
-        }
-
-        if (consistent)
-          revealed.push(info);
-        else
+        if (needsReveal)
           needsReveals.push(info);
+        else
+          revealed.push(info);
       }
 
       await writeJSON(fileNeedsReveals, needsReveals, true);
@@ -164,7 +151,3 @@ function help() {
   console.error(e);
   process.exit(1);
 });
-
-function toKey(info) {
-  return info.prevout.hash + info.prevout.index;
-}
