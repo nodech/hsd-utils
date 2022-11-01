@@ -1,0 +1,117 @@
+#!/usr/bin/env node
+
+'use strict';
+
+const assert = require('bsert');
+const fs = require('bfile');
+const cfg = require('../lib/config');
+const wallet = require('../lib/wallet');
+
+function help() {
+  const help = './bin/import-bids WALLET_ID CSV_FILE';
+
+  console.error(help);
+  process.exit(2);
+}
+
+(async () => {
+  const config = cfg.parse();
+
+  const id = config.str(0);
+  const file = config.str(1);
+
+  if (!id || !file)
+    help();
+
+  const client = wallet.client();
+  const names = await readCSVSimple(file);
+
+  await client.execute('selectwallet', [id]);
+
+  let filledBlind = 0;
+  let failed = 0;
+  const blinds = new Set();
+
+  /* eslint-disable camelcase */
+  for (const {domain, bid_address, bid_amount} of names) {
+    if (!domain)
+      continue;
+    const name = unquote(domain);
+    const info = await client.getAuctionByName(id, name);
+
+    if (!info)
+      continue;
+
+    let unrevealed = 0;
+    let novalue = 0;
+
+    for (const bid of info.bids) {
+      if (!bid.own)
+        continue;
+
+      blinds.add(bid.blind);
+
+      if (typeof bid.value === 'undefined') {
+        console.log('Found no value bid: ', domain);
+        novalue++;
+      }
+
+      unrevealed++;
+    }
+
+    for (const reveal of info.reveals) {
+      if (reveal.own)
+        unrevealed--;
+    }
+
+    if (unrevealed && novalue) {
+      let blind;
+
+      try {
+        blind = await client.execute('importnonce', [
+          name,
+          bid_address,
+          bid_amount / 1e6
+        ]);
+
+        assert(blinds.has(blind));
+        console.log(`Imported blind for ${domain}`);
+        filledBlind++;
+      } catch (e) {
+        console.error(`Tried and failed to import for: ${domain}`);
+        console.error(e.message);
+        failed++;
+      }
+    }
+  }
+  /* eslint-enable camelcase */
+
+  console.log(`Imported ${filledBlind} values for blinds. Failed: ${failed}.`);
+})().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
+
+async function readCSVSimple(file) {
+  const content = (await fs.readFile(file)).toString('utf8');
+  const items = [];
+
+  const lines = content.split('\n');
+  const keys = lines.shift().split(',').map(k => k.slice(1, -1));
+
+  for (const line of lines) {
+    const obj = {};
+    const elements = line.split(',');
+
+    for (const [index, value] of elements.entries())
+      obj[keys[index]] = value;
+
+    items.push(obj);
+  }
+
+  return items;
+}
+
+function unquote(name) {
+  return name.replace(/"/g, '');
+}
