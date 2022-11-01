@@ -83,7 +83,7 @@ function help() {
       const data = await readJSON(fileFiltered, true);
       console.log('Sorting by height...');
       data.sort((a, b) => {
-        return a.stats.hoursUntilClosed - b.stats.hoursUntilClosed;
+        return a.stats.hoursUntilClose - b.stats.hoursUntilClose;
       });
 
       await writeJSON(fileByHoursClosed, data, true);
