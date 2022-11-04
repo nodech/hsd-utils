@@ -54,7 +54,8 @@ function help() {
   if (currentTipHeight === -1)
     currentTipHeight = (await client.getInfo()).chain.height;
 
-  const lastBids = currentTipHeight - network.names.revealPeriod;
+  const revealStart = currentTipHeight - network.names.revealPeriod;
+  const bidStart = revealStart - network.names.biddingPeriod;
 
   const step = config.str(1, 'all');
   let fallthrough = config.bool('all', false);
@@ -80,12 +81,15 @@ function help() {
 
     case '1':
     case 'filter': {
+      if (!await node.hasDumpPlugin(client))
+        throw new Error('Can not filter w/o dump plugin.');
+      console.log('Start filtering...');
       const data = await readJSON(fileCoins, true);
       console.log(`Current tip: ${currentTipHeight}.`);
-      console.log(`Filtering BID utxos before ${lastBids}...`);
+      console.log(`Filtering BID utxos before ${bidStart}/${revealStart}...`);
 
-      const lost = [];
       const needsReveal = [];
+      const lost = [];
 
       for (const coin of data) {
         if (coin.covenant.action !== 'BID')
@@ -95,12 +99,32 @@ function help() {
         if (coin.height === -1)
           continue;
 
-        if (coin.height > lastBids) {
-          needsReveal.push(coin);
+        const hash = coin.covenant.items[0];
+        const info = await node.getNameByHash(
+          client,
+          hash,
+          coin.height,
+          currentTipHeight
+        );
+
+        if (coin.height < bidStart) {
+          coin.name = info.name;
+          lost.push(coin);
           continue;
         }
 
-        lost.push(coin);
+        coin.ns = info;
+        coin.name = info.name;
+
+        if (info.state === 'CLOSED') {
+          lost.push(coin);
+          continue;
+        }
+
+        if (info.state === 'REVEAL') {
+          needsReveal.push(coin);
+          continue;
+        }
       }
 
       await writeJSON(fileLost, lost, true);
@@ -112,18 +136,23 @@ function help() {
 
     case '2':
     case 'sort': {
+      console.log('Start sorting...');
       const dataLost = await readJSON(fileLost, true);
       const dataReveals = await readJSON(fileNeedsReveal, true);
-      console.log('Sorting by height...');
+      console.log('Sorting lost by height...');
 
-      const sort = (a, b) => {
+      dataLost.sort((a, b) => {
         return b.height - a.height;
-      };
+      });
 
-      dataLost.sort(sort);
-      dataReveals.sort(sort);
+      console.log('Sorting reveal by close...');
+      dataReveals.sort((a, b) => {
+        return a.ns.stats.blocksUntilClose - b.ns.stats.blocksUntilClose;
+      });
 
+      console.log('Writing lost bids...');
       await writeJSON(fileByHeight, dataLost, true);
+      console.log('Writing reveals...');
       await writeJSON(fileRevealByHeight, dataReveals, true);
 
       if (!fallthrough)
