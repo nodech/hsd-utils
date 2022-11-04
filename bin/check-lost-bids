@@ -12,12 +12,15 @@ const {writeJSON, readJSON, spawn} = require('../lib/util');
 const {Network} = require('hsd');
 
 function help() {
-  const help = `./bin/check-lost-bids WALLET_ID STEP [OPTIONS]
+  const help = `./bin/check-bids WALLET_ID STEP HOURS [OPTIONS]
   OPTIONS:
     --all do from STEP to 4.
 
-  STEPS:
+  HOURS - status specific, filter reveals which have less than HOURS left.
 
+  STEPS:
+    1, filter: filter bids utxos.
+    2, sort: sort lost and reveals.
 
   Diff STEPS:
     all: Do steps from 1 to 4. (exc 0)
@@ -42,8 +45,9 @@ function help() {
   const fileLost = path.join(dataDir, '1-filter-lost-utxos.json');
   const fileNeedsReveal = path.join(dataDir, '1-filter-needs-reveal.json');
   const fileByHeight = path.join(dataDir, '2-sorted-by-height.json');
-  const fileRevealByHeight = path.join(dataDir,
-                                       '2-sorted-by-height-reveal.json');
+  const fileRevealByHrsLeft = path.join(dataDir,
+                                       '2-sorted-by-reveal-left.json');
+  const fileRevealRequests = path.join(dataDir, 'status-requests.json');
 
   await fs.mkdirp(dataDir);
 
@@ -153,14 +157,46 @@ function help() {
       console.log('Writing lost bids...');
       await writeJSON(fileByHeight, dataLost, true);
       console.log('Writing reveals...');
-      await writeJSON(fileRevealByHeight, dataReveals, true);
+      await writeJSON(fileRevealByHrsLeft, dataReveals, true);
 
       if (!fallthrough)
         break;
     }
 
     case 'status': {
-      throw new Error('NO STAT');
+      const hours = config.int(2, 24);
+      const split = config.int('split', 10);
+      const reveals = await readJSON(fileRevealByHrsLeft, true);
+
+      const totalReveals = reveals.length;
+
+      const names = new Set();
+
+      for (const coin of reveals) {
+        const untilClose = coin.ns.stats.hoursUntilClose;
+
+        if (untilClose > hours)
+          continue;
+
+        names.add(coin.ns.name);
+      }
+
+      console.log(`
+  Wallet: ${id}.
+  Total bids that need reveal: ${totalReveals}.
+  Bids that need reveal before ${hours} hours: ${names.size}.`
+      );
+
+      if (names.size === 0)
+        break;
+
+      const arr = [...names];
+      const splitarr = [];
+
+      for (let i = 0; i < arr.length; i += split)
+        splitarr.push(arr.slice(i, i + split));
+
+      await writeJSON(fileRevealRequests, splitarr);
     }
   }
 })().catch((e) => {
