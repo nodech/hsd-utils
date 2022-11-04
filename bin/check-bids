@@ -12,7 +12,7 @@ const {writeJSON, readJSON, spawn} = require('../lib/util');
 const {Network} = require('hsd');
 
 function help() {
-  const help = `./bin/check-bids WALLET_ID STEP HOURS [OPTIONS]
+  const help = `./bin/check-bids WALLET_ID STEP TIP_HEIGHT HOURS [OPTIONS]
   OPTIONS:
     --all do from STEP to 4.
 
@@ -24,7 +24,8 @@ function help() {
 
   Diff STEPS:
     all: Do steps from 1 to 4. (exc 0)
-    status: get summary of classified data.
+    status-reveal: get summary reveals.
+    status-lost: get summary of lost bids.
   `;
 
   console.error(help);
@@ -40,14 +41,14 @@ function help() {
     help();
 
   const dataRoot = config.str('data-dir', os.tmpdir());
-  const dataDir = path.join(dataRoot, `check-lost-bids-${id}`);
+  const dataDir = path.join(dataRoot, `check-bids-${id}`);
   const fileCoins = common.coinsDumpFile(dataRoot, id);
   const fileLost = path.join(dataDir, '1-filter-lost-utxos.json');
   const fileNeedsReveal = path.join(dataDir, '1-filter-needs-reveal.json');
-  const fileByHeight = path.join(dataDir, '2-sorted-by-height.json');
-  const fileRevealByHrsLeft = path.join(dataDir,
-                                       '2-sorted-by-reveal-left.json');
+  const fileLostByHeight = path.join(dataDir, '2-lost-by-height.json');
+  const fileRevealByHrsLeft = path.join(dataDir, '2-reveal-by-hrs-left.json');
   const fileRevealRequests = path.join(dataDir, 'status-requests.json');
+  const fileLostWithTime = path.join(dataDir, 'status-lost.json');
 
   await fs.mkdirp(dataDir);
 
@@ -155,7 +156,7 @@ function help() {
       });
 
       console.log('Writing lost bids...');
-      await writeJSON(fileByHeight, dataLost, true);
+      await writeJSON(fileLostByHeight, dataLost, true);
       console.log('Writing reveals...');
       await writeJSON(fileRevealByHrsLeft, dataReveals, true);
 
@@ -163,8 +164,11 @@ function help() {
         break;
     }
 
-    case 'status': {
-      const hours = config.int(2, 24);
+    case 'status':
+      fallthrough = true;
+
+    case 'status-reveal': {
+      const hours = config.int(3, 24);
       const split = config.int('split', 10);
       const reveals = await readJSON(fileRevealByHrsLeft, true);
 
@@ -187,9 +191,6 @@ function help() {
   Bids that need reveal before ${hours} hours: ${names.size}.`
       );
 
-      if (names.size === 0)
-        break;
-
       const arr = [...names];
       const splitarr = [];
 
@@ -197,6 +198,27 @@ function help() {
         splitarr.push(arr.slice(i, i + split));
 
       await writeJSON(fileRevealRequests, splitarr);
+
+      if (!fallthrough)
+        break;
+    }
+
+    case 'status-lost': {
+      const timeByHeight = await readJSON(common.blocktimesFile(dataRoot));
+      const coins = await readJSON(fileLostByHeight, true);
+      let amount = 0;
+
+      for (const coin of coins) {
+        coin.time = timeByHeight[coin.height];
+        amount += coin.value;
+      }
+
+      console.log(`
+  Wallet: ${id}.
+  Total lost amount: ${amount / 1e6} hns
+  Total lost bids: ${coins.length}.`);
+
+      await writeJSON(fileLostWithTime, true);
     }
   }
 })().catch((e) => {
