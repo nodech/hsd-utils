@@ -12,7 +12,7 @@ const {writeJSON, readJSON, spawn} = require('../lib/util');
 const {Network} = require('hsd');
 
 function help() {
-  const help = `./bin/check-opens-unowned WALLET_ID STEP [OPTIONS]`;
+  const help = './bin/check-opens-unowned WALLET_ID STEP [OPTIONS]';
 
   console.error(help);
   process.exit(2);
@@ -73,7 +73,8 @@ function help() {
       console.log('Start filtering...');
       const data = await readJSON(fileCoins, true);
       console.log(`Current tip: ${currentTipHeight}.`);
-      console.log(`Filtering OPEN utxos before ${bidStart}, total: ${data.length}...`);
+      console.log(`Filtering OPEN utxos before ${bidStart}`);
+      console.log(`Total utxos to filter: ${data.length}...`);
 
       const opens = [];
       for (const coin of data) {
