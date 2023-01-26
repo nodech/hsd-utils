@@ -118,6 +118,11 @@ function help() {
           continue;
         }
 
+        if (!info || !info.name) {
+          console.log('Could not find: ', coin.hash, coin.index);
+          continue;
+        }
+
         coin.ns = info;
         coin.name = info.name;
 

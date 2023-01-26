@@ -1,0 +1,104 @@
+#!/usr/bin/env node
+
+'use strict';
+
+const assert = require('bsert');
+const fs = require('bfile');
+const cfg = require('../lib/config');
+const wallet = require('../lib/wallet');
+
+function help() {
+  const help = './bin/import-bids WALLET_ID bids.json';
+
+  console.error(help);
+  process.exit(2);
+}
+
+(async () => {
+  const config = cfg.parse();
+
+  const id = config.str(0);
+  const file = config.str(1);
+
+  if (!id || !file)
+    help();
+
+  const client = wallet.client();
+  const bids = await fs.readJSON(file);
+
+  await client.execute('selectwallet', [id]);
+
+  let filledBlind = 0;
+  let failed = 0;
+  let skipped = 0;
+
+  for (const bid of bids) {
+    const {name, blind} = bid;
+    const {hash, index} = bid.prevout;
+
+    const coin = await client.getCoin(id, hash, index);
+
+    if (!coin) {
+      skipped++;
+      continue;
+    }
+
+    const blinds = new Set();
+    const info = await client.getAuctionByName(id, name);
+
+    if (!info) {
+      skipped++;
+      continue;
+    }
+
+    console.log('Has coin and info:', name);
+
+    let unrevealed = 0;
+    let novalue = 0;
+
+    for (const abid of info.bids) {
+      if (!abid.own)
+        continue;
+
+      blinds.add(abid.blind);
+      if (typeof abid.value === 'undefined') {
+        console.log('Found no value bid: ', name);
+        novalue++;
+      }
+
+      unrevealed++;
+    }
+
+    for (const reveal of info.reveals) {
+      if (reveal.own)
+        unrevealed--;
+    }
+
+    if (unrevealed && novalue) {
+      let iblind;
+
+      try {
+        iblind = await client.execute('importnonce', [
+          name,
+          coin.address,
+          bid.value / 1e6
+        ]);
+
+        assert(blinds.has(iblind));
+        assert(blind === iblind);
+        console.log(`Imported blind for ${name}`);
+        filledBlind++;
+      } catch (e) {
+        console.error(`Tried and failed to import for: ${name}`);
+        console.error(e.message);
+        failed++;
+      }
+    }
+  }
+
+  console.log(`Skipped ${skipped} bids.`);
+  console.log(`Imported ${filledBlind} values for blinds. Failed: ${failed}.`);
+})().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

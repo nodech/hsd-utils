@@ -1,0 +1,86 @@
+#!/usr/bin/env node
+
+'use strict';
+
+const os = require('os');
+const path = require('path');
+const fs = require('bfile');
+const common = require('../lib/common');
+const cfg = require('../lib/config');
+const {writeJSON, readJSON} = require('../lib/util');
+
+function help() {
+  const help = './bin/check-crosses WALLET_ID WALLET_ID';
+
+  console.error(help);
+  process.exit(2);
+}
+
+(async () => {
+  const config = cfg.parse();
+
+  const idw1 = config.str(0);
+  const idw2 = config.str(1);
+
+  if (!idw1 || !idw2)
+    help();
+
+  if (idw1 === idw2) {
+    console.log('identical');
+    return;
+  }
+
+  const dataRoot = config.str('data-dir', os.tmpdir());
+  const dataDir = path.join(dataRoot, 'cross');
+  const fileNames1 = common.namesDumpFile(dataRoot, idw1);
+  const fileNames2 = common.namesDumpFile(dataRoot, idw2);
+
+  const wids = [idw1, idw2].sort();
+
+  // const common = path.join
+  const namesCommon = path.join(dataDir, `names-${wids[0]}-${wids[1]}.json`);
+
+  await fs.mkdirp(dataDir);
+
+  if (await fs.exists(namesCommon)) {
+    console.log('File already exists:', namesCommon);
+    return;
+  }
+
+  const step = config.str(2, 'names');
+
+  switch (step) {
+    case 'names': {
+      const names1 = await readJSON(fileNames1, true);
+      const names2 = await readJSON(fileNames2, true);
+
+      const unique1 = new Set();
+      const unique2 = new Set();
+      const all = new Set();
+      const intersect = new Set();
+
+      for (const {name} of names1) {
+        unique1.add(name);
+        all.add(name);
+      }
+
+      for (const {name} of names2) {
+        unique2.add(name);
+        all.add(name);
+
+        if (unique1.has(name))
+          intersect.add(name);
+      }
+
+      console.log(`All names in ${idw1}: ${names1.length}`);
+      console.log(`All names in ${idw2}: ${names2.length}`);
+      console.log(`Total : ${names1.length + names2.length}`);
+      console.log(`Unique: ${all.size}`);
+      console.log(`Intersect: ${intersect.size}`);
+      await writeJSON(namesCommon, [...intersect]);
+    }
+  }
+})().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

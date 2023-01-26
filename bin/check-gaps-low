@@ -144,13 +144,12 @@ function getGaps(depthBlocks) {
   }
 
   const gapInfos = getGaps(depthBlocks);
-  const str = JSON.stringify(gapInfos, null, 2);
 
   if (!output)
-    console.log(str);
+    console.log(JSON.stringify(gapInfos, null, 2));
 
   if (output)
-    await fs.writeJSON(output, str);
+    await fs.writeJSON(output, gapInfos);
 
   await store.close();
   await chain.close();
