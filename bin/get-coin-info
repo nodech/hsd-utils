@@ -1,0 +1,252 @@
+#!/usr/bin/env node
+
+'use strict';
+
+const os = require('os');
+const path = require('path');
+const fs = require('bfile');
+const common = require('../lib/common');
+const cfg = require('../lib/config');
+const node = require('../lib/node');
+const {writeJSON, readJSON, spawn} = require('../lib/util');
+
+const SPENDABLES = new Set(['NONE', 'OPEN', 'REDEEM']);
+
+class BalanceInfo {
+  constructor() {
+    this.confirmedCoins = 0;
+    this.unconfirmedCoins = 0;
+
+    this.confirmedSpendableCoins = 0;
+    this.unconfirmedSpendableCoins = 0;
+
+    this.confirmedSpendableBalance = 0;
+    this.unconfirmedSpendableBalance = 0;
+
+    this.confirmedBalance = 0;
+    this.unconfirmedBalance = 0;
+
+    this.confirmedLockBalance = 0;
+    this.unconfirmedLockBalance = 0;
+
+    this.confirmedOpenCoins = 0;
+    this.unconfirmedOpenCoins = 0;
+    this.confirmedNonZeroOpenCoins = 0;
+    this.unconfirmedNonZeroOpenCoins = 0;
+
+    this.confirmedBidCoins = 0;
+    this.unconfirmedBidCoins = 0;
+    this.confirmedBidBalance = 0;
+    this.unconfirmedBidBalance = 0;
+
+    this.confirmedRevealCoins = 0;
+    this.unconfirmedRevealCoins = 0;
+    this.confirmedRevealBalance = 0;
+    this.unconfirmedRevealBalance = 0;
+
+    this.confirmedUpdateableCoins = 0;
+    this.unconfirmedUpdateableCoins = 0;
+    this.confirmedUpdateableBalance = 0;
+    this.unconfirmedUpdateableBalance = 0;
+
+    this.confirmedTransferCoins = 0;
+    this.unconfirmedTransferCoins = 0;
+    this.confirmedTransferBalance = 0;
+    this.unconfirmedTransferBalance = 0;
+
+    this.confirmedFinalizeCoins = 0;
+    this.unconfirmedFinalizeCoins = 0;
+    this.confirmedFinalizeBalance = 0;
+    this.unconfirmedFinalizeBalance = 0;
+  }
+
+  addCoin(coin) {
+    this.unconfirmedCoins += 1;
+    this.unconfirmedBalance += coin.value;
+
+    if (coin.height !== -1) {
+      this.confirmedCoins += 1;
+      this.confirmedBalance += coin.value;
+    }
+
+    if (SPENDABLES.has(coin.covenant.action)) {
+      this.unconfirmedSpendableCoins++;
+      this.unconfirmedSpendableBalance += coin.value;
+
+      if (coin.height !== -1) {
+        this.confirmedSpendableCoins++;
+        this.confirmedSpendableBalance += coin.value;
+      }
+
+      if (coin.covenant.action === 'OPEN') {
+        this.unconfirmedOpenCoins++;
+
+        if (coin.value !== 0)
+          this.unconfirmedNonZeroOpenCoins++;
+
+        if (coin.height !== -1) {
+          this.confirmedOpenCoins++;
+
+          if (coin.value !== 0)
+            this.confirmedNonZeroOpenCoins++;
+        }
+      }
+      return;
+    }
+
+    this.unconfirmedLockBalance += coin.value;
+
+    if (coin.height !== -1)
+      this.confirmedLockBalance += coin.value;
+
+    switch (coin.covenant.action) {
+      case 'BID': {
+        this.unconfirmedBidCoins++;
+        this.unconfirmedBidBalance += coin.value;
+
+        if (coin.height !== -1) {
+          this.confirmedBidCoins++;
+          this.confirmedBidBalance += coin.value;
+        }
+        break;
+      }
+
+      case 'REVEAL': {
+        this.unconfirmedRevealCoins++;
+        this.unconfirmedRevealBalance += coin.value;
+
+        if (coin.height !== -1) {
+          this.confirmedRevealCoins++;
+          this.confirmedRevealBalance += coin.value;
+        }
+        break;
+      }
+
+      case 'UPDATE':
+      case 'REGISTER': {
+        this.unconfirmedUpdateableCoins++;
+        this.unconfirmedUpdateableBalance += coin.value;
+
+        if (coin.height !== -1) {
+          this.confirmedUpdateableCoins++;
+          this.confirmedUpdateableBalance += coin.value;
+        }
+        break;
+      }
+
+      case 'TRANSFER': {
+        console.log(coin);
+        this.unconfirmedTransferCoins++;
+        this.unconfirmedTransferBalance += coin.value;
+
+        if (coin.height !== -1) {
+          this.confirmedTransferCoins++;
+          this.confirmedTransferBalance += coin.value;
+        }
+        break;
+      }
+
+      case 'FINALIZE': {
+        this.unconfirmedFinalizeCoins++;
+        this.unconfirmedFinalizeBalance += coin.value;
+
+        if (coin.height !== -1) {
+          this.confirmedFinalizeCoins++;
+          this.confirmedFinalizeBalance += coin.value;
+        }
+        break;
+      }
+
+      default: {
+        console.log(coin);
+        throw new Error('Not impl yet.');
+      }
+    }
+  }
+}
+
+function help() {
+  const help = `./bin/get-coin-info WALLET_ID [STEP] [OPTIONS]
+  OPTIONS:
+    --all - Do every step from STEP to the last.
+
+  STEPS:
+    0, dump: Dump all coins for the wallet.
+    1, sum: Summarize information.
+    status: Get status.
+    all: Do steps from 1. (not 0)
+  `;
+
+  console.error(help);
+  process.exit(2);
+}
+
+(async () => {
+  const config = cfg.parse();
+
+  const id = config.str(0);
+
+  if (!id)
+    help();
+
+  const dataRoot = config.str('data-dir', os.tmpdir());
+  const dataDir = path.join(dataRoot, `get-coin-info-${id}`);
+  const fileCoins = common.coinsDumpFile(dataRoot, id);
+  const fileSummed = path.join(dataDir, '1-summary.json');
+
+  await fs.mkdirp(dataDir);
+
+  const client = node.client();
+
+  const step = config.str(1, 'all');
+
+  let fallthrough = config.bool('all', false);
+
+  switch (step) {
+    case '0':
+    case 'dump': {
+      console.log('Getting wallet coins...');
+      const env = cfg.configToENV(config);
+
+      await Promise.all([
+        spawn(common.execs.dumpBlockTimes, null, { env }),
+        spawn(common.execs.dump, ['coins', id], { env })
+      ]);
+
+      if (!fallthrough)
+        break;
+    }
+
+    case 'all':
+      fallthrough = true;
+
+    case '1':
+    case 'filter': {
+      if (!await node.hasDumpPlugin(client))
+        throw new Error('Can not filter w/o dump plugin.');
+
+      // 4089 - has entry?
+      // 19958 - is spendable ?
+      const info = new BalanceInfo();
+      const data = await readJSON(fileCoins, true);
+
+      for (const coin of data)
+        info.addCoin(coin);
+
+      await writeJSON(fileSummed, info, false);
+
+      if (!fallthrough)
+        break;
+    }
+
+    case 'status': {
+      const info = await readJSON(fileSummed, false);
+
+      console.log(info);
+    }
+      // 355 238
+  }
+})().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

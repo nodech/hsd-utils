@@ -63,7 +63,7 @@ function getGaps(depthBlocks) {
     const gap = derivation - lastDepth;
 
     if (gap > 1)
-      gapObj.gaps.push([lastDepth, gap]);
+      gapObj.gaps.push({ lastDepth, gap, height });
 
     lastDepth = derivation;
   }

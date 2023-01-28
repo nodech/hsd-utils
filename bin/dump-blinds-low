@@ -1,0 +1,114 @@
+#!/usr/bin/env node
+
+'use strict';
+
+const os = require('os');
+const bio = require('bufio');
+const fs = require('bfile');
+const path = require('path');
+const cfg = require('../lib/config');
+const common = require('../lib/common');
+
+const hsd = require('hsd');
+const Network = hsd.Network;
+const WalletDB = hsd.WalletDB;
+const layout = require('hsd/lib/wallet/layout').txdb;
+const consensus = hsd.consensus;
+
+function help() {
+  const help = `./bin/dump-blinds-low PREFIX WALLET_ID
+
+  OPTIONS:
+    --data-dir - directory to dump blinds to.
+  `;
+
+  console.error(help);
+  process.exit(2);
+}
+
+class BlindValue extends bio.Struct {
+  constructor() {
+    super();
+    this.value = 0;
+    this.nonce = consensus.ZERO_HASH;
+  }
+
+  getSize() {
+    return 40;
+  }
+
+  write(bw) {
+    bw.writeU64(this.value);
+    bw.writeBytes(this.nonce);
+    return bw;
+  }
+
+  read(br) {
+    this.value = br.readU64();
+    this.nonce = br.readBytes(32);
+    return this;
+  }
+
+  getJSON() {
+    return {
+      value: this.value,
+      nonce: this.nonce.toString('hex')
+    };
+  }
+}
+
+(async () => {
+  const config = cfg.parse();
+
+  const prefix = config.str(0);
+  const id = config.str(1);
+
+  if (!prefix || !id)
+    help();
+
+  if (!fs.exists(prefix))
+    throw new Error(`Could not find ${prefix}`);
+
+  console.error('Look for wallet in ', prefix);
+
+  const dataRoot = config.str('data-dir', os.tmpdir());
+  const dumpDir = common.dumpDir(dataRoot, id);
+  const blindsFile = path.join(dumpDir, 'blinds.json');
+  await fs.mkdirp(dumpDir);
+
+  const network = Network.get('main');
+  const wdb = new WalletDB({
+    network,
+    prefix,
+    memory: false
+  });
+
+  console.error('Opening wallet..');
+  await wdb.open();
+  console.error('Wallet opened..');
+
+  const wallet = await wdb.get('hot');
+  const txdb = wallet.txdb;
+  const bucket = txdb.bucket;
+
+  const iter = bucket.iterator({
+    gte: layout.v.min(),
+    lte: layout.v.max(),
+    keys: true,
+    values: true
+  });
+
+  const blinds = {};
+
+  await iter.each((k, value) => {
+    blinds[k.toString('hex')] = BlindValue.decode(value);
+  });
+
+  console.log('Writing blinds...');
+  await fs.writeJSON(blindsFile, blinds);
+
+    await wdb.close();
+})().catch((e) => {
+    console.error(e);
+    process.exit(1);
+});
