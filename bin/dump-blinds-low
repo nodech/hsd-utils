@@ -83,13 +83,19 @@ class BlindValue extends bio.Struct {
     memory: false
   });
 
-  console.error('Opening wallet..');
+  console.error('Opening WalletDB...');
   await wdb.open();
-  console.error('Wallet opened..');
+  console.error('WalletDB opened.');
 
-  const wallet = await wdb.get('hot');
+  const wallet = await wdb.get(id);
+
+  if (!wallet)
+    throw new Error(`Could not find wallet ${id}.`);
+
   const txdb = wallet.txdb;
   const bucket = txdb.bucket;
+
+  console.error(`Dumping blinds for ${id}...`);
 
   const iter = bucket.iterator({
     gte: layout.v.min(),
