@@ -7,7 +7,6 @@ const path = require('path');
 const fs = require('bfile');
 const common = require('../lib/common');
 const cfg = require('../lib/config');
-const node = require('../lib/node');
 const {writeJSON, readJSON, spawn} = require('../lib/util');
 
 const SPENDABLES = new Set(['NONE', 'OPEN', 'REDEEM']);
@@ -135,7 +134,6 @@ class BalanceInfo {
       }
 
       case 'TRANSFER': {
-        console.log(coin);
         this.unconfirmedTransferCoins++;
         this.unconfirmedTransferBalance += coin.value;
 
@@ -169,6 +167,7 @@ function help() {
   const help = `./bin/get-coin-info WALLET_ID [STEP] [OPTIONS]
   OPTIONS:
     --all - Do every step from STEP to the last.
+    --from-chain-dump
 
   STEPS:
     0, dump: Dump all coins for the wallet.
@@ -189,14 +188,18 @@ function help() {
   if (!id)
     help();
 
+  const fromChainDump = config.bool('from-chain-dump', false);
   const dataRoot = config.str('data-dir', os.tmpdir());
   const dataDir = path.join(dataRoot, `get-coin-info-${id}`);
-  const fileCoins = common.coinsDumpFile(dataRoot, id);
+
+  let fileCoins = common.coinsDumpFile(dataRoot, id);
+
+  if (fromChainDump)
+    fileCoins = common.chainCoinsDumpFile(dataRoot, id);
+
   const fileSummed = path.join(dataDir, '1-summary.json');
 
   await fs.mkdirp(dataDir);
-
-  const client = node.client();
 
   const step = config.str(1, 'all');
 
@@ -222,11 +225,6 @@ function help() {
 
     case '1':
     case 'filter': {
-      if (!await node.hasDumpPlugin(client))
-        throw new Error('Can not filter w/o dump plugin.');
-
-      // 4089 - has entry?
-      // 19958 - is spendable ?
       const info = new BalanceInfo();
       const data = await readJSON(fileCoins, true);
 

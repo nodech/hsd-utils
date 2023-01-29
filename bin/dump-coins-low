@@ -1,0 +1,114 @@
+#!/usr/bin/env node
+
+'use strict';
+
+const os = require('os');
+const hsd = require('hsd');
+const blockstore = require('hsd/lib/blockstore');
+const {HDPublicKey} = hsd.hd;
+const {Address, Chain} = hsd;
+const cfg = require('../lib/config');
+const common = require('../lib/common');
+const {writeJSON} = require('../lib/util');
+
+function help() {
+  const help = `./bin/dump-coins-low CHAIN_PATH XPUB MAX_RECV MAX_CHANGE
+
+  OPTIONS:
+    --wid          wallet    - wallet name
+    --data-dir    /tmp/rand - directory to dump names to.
+    --network     main      - network.
+    --progress    10000     - progress report to STDERR.
+
+  NOTE: Needs chain with tx-indexer and address-indexer on.
+  `;
+  console.log(help);
+  process.exit(2);
+}
+
+(async () => {
+  const config = cfg.parse();
+
+  const chainPath = config.str(0);
+  const xpub = config.str(1);
+  const maxRecv = config.str(2, 0);
+  const maxChange = config.str(3, 0);
+
+  if (!chainPath || !xpub || !maxRecv || !maxChange)
+    help();
+
+  const dataRoot = config.str('data-dir', os.tmpdir());
+  const wid = config.str('wid', 'wallet');
+  const network = config.str('network', 'main');
+  const progress = config.uint('progress', 1e4);
+  const chainCoinsFile = common.chainCoinsDumpFile(dataRoot, wid);
+
+  const accountKey = HDPublicKey.fromBase58(xpub, network);
+  const recvKey = accountKey.derive(0);
+  const changeKey = accountKey.derive(1);
+
+  console.error('Dumping wallet coins from tx/coin indexers...');
+  console.error(`
+  Out: ${chainCoinsFile},
+  Chain: ${chainPath},
+  maxRecv: ${maxRecv},
+  maxChange: ${maxChange}`);
+
+  const store = blockstore.create({
+    prefix: chainPath,
+    network
+  });
+
+  const chain = new Chain({
+    network: network,
+    prefix: chainPath,
+    blocks: store,
+    memory: false,
+    indexTX: true,
+    indexAddress: true
+  });
+
+  await store.open();
+  await chain.open();
+
+  const getCoins = async (key, max) => {
+    let index = 0;
+    const allCoins = [];
+
+    for (;;) {
+      if (progress && index % progress === 0)
+        console.error(`Progress ${index}/${max}...`);
+
+      if (index > max) {
+        console.error(`Stoped at ${index}.`);
+        break;
+      }
+
+      const addr = Address.fromPubkey(key.derive(index).publicKey);
+      const coins = await chain.getCoinsByAddress(addr);
+
+      for (const coin of coins)
+        allCoins.push(coin.getJSON(network));
+
+      index++;
+    }
+
+    return allCoins;
+  };
+
+  const recvCoins = await getCoins(recvKey, maxRecv);
+  const changeCoins = await getCoins(changeKey, maxChange);
+  const all = [
+    ...recvCoins,
+    ...changeCoins
+  ];
+
+  await writeJSON(chainCoinsFile, all, true);
+
+  await store.close();
+  await chain.close();
+})().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
+
