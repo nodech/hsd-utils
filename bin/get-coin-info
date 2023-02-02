@@ -2,6 +2,7 @@
 
 'use strict';
 
+const assert = require('assert');
 const os = require('os');
 const path = require('path');
 const fs = require('bfile');
@@ -25,8 +26,8 @@ class BalanceInfo {
     this.confirmedBalance = 0;
     this.unconfirmedBalance = 0;
 
-    this.confirmedLockBalance = 0;
-    this.unconfirmedLockBalance = 0;
+    this.confirmedLockedBalance = 0;
+    this.unconfirmedLockedBalance = 0;
 
     this.confirmedOpenCoins = 0;
     this.unconfirmedOpenCoins = 0;
@@ -93,10 +94,10 @@ class BalanceInfo {
       return;
     }
 
-    this.unconfirmedLockBalance += coin.value;
+    this.unconfirmedLockedBalance += coin.value;
 
     if (coin.height !== -1)
-      this.confirmedLockBalance += coin.value;
+      this.confirmedLockedBalance += coin.value;
 
     switch (coin.covenant.action) {
       case 'BID': {
@@ -121,6 +122,7 @@ class BalanceInfo {
         break;
       }
 
+      case 'RENEW':
       case 'UPDATE':
       case 'REGISTER': {
         this.unconfirmedUpdateableCoins++;
@@ -147,10 +149,14 @@ class BalanceInfo {
       case 'FINALIZE': {
         this.unconfirmedFinalizeCoins++;
         this.unconfirmedFinalizeBalance += coin.value;
+        this.unconfirmedUpdateableCoins++;
+        this.unconfirmedUpdateableBalance += coin.value;
 
         if (coin.height !== -1) {
           this.confirmedFinalizeCoins++;
           this.confirmedFinalizeBalance += coin.value;
+          this.confirmedUpdateableCoins++;
+          this.confirmedUpdateableBalance += coin.value;
         }
         break;
       }
@@ -161,6 +167,90 @@ class BalanceInfo {
       }
     }
   }
+
+  toJSON() {
+    const balance = {
+      coin: this.unconfirmedCoins,
+      unconfirmed: this.unconfirmedBalance,
+      confirmed: this.confirmedBalance,
+      lockedUnconfirmed: this.unconfirmedLockedBalance,
+      lockedConfirmed: this.confirmedLockedBalance
+    };
+
+    const spendableCoins = {
+      coin: this.confirmedSpendableCoins,
+      opens: this.confirmedOpenCoins,
+      nonzeroOpens: this.confirmedNonZeroOpenCoins
+    };
+
+    const unconfirmedSpendableCoins = {
+      coin: this.unconfirmedSpendableCoins,
+      opens: this.unconfirmedOpenCoins,
+      nonzeroOpens: this.unconfirmedNonZeroOpenCoins
+    };
+
+    const lockedCoins = {
+      lockedCoins: this.confirmedLockedCoins,
+      bids: this.confirmedBidCoins,
+      reveals: this.confirmedRevealCoins,
+      transfers: this.confirmedTransferCoins,
+      finalizes: this.confirmedFinalizeCoins,
+      updatables: this.confirmedUpdateableCoins
+    };
+
+    const unconfirmedLockedCoins = {
+      lockedCoins: this.unconfirmedLockedCoins,
+      bids: this.unconfirmedBidCoins,
+      reveals: this.unconfirmedRevealCoins,
+      transfers: this.unconfirmedTransferCoins,
+      finalizes: this.unconfirmedFinalizeCoins,
+      updatables: this.unconfirmedUpdateableCoins
+    };
+
+    const spendableBalance = {
+      confirmed: this.confirmedSpendableBalance,
+      unconfirmed: this.unconfirmedSpendableBalance
+    };
+
+    const lockedBalances = {
+      lockedBalance: this.confirmedLockedBalance,
+      bids: this.confirmedBidBalance,
+      reveals: this.confirmedRevealBalance,
+      transfers: this.confirmedTransferBalance,
+      finalizes: this.confirmedFinalizeBalance,
+      updatables: this.confirmedUpdateableBalance
+    };
+
+    const unconfirmedLockedBalances = {
+      lockedBalance: this.unconfirmedLockedBalance,
+      bids: this.unconfirmedBidBalance,
+      reveals: this.unconfirmedRevealBalance,
+      transfers: this.unconfirmedTransferBalance,
+      finalizes: this.unconfirmedFinalizeBalance,
+      updatables: this.unconfirmedUpdateableBalance
+    };
+
+    return {
+      balance,
+      coins: {
+        spendable: {
+          confirmed: spendableCoins,
+          unconfirmed: unconfirmedSpendableCoins
+        },
+        locked: {
+          confirmed: lockedCoins,
+          unconfirmed: unconfirmedLockedCoins
+        }
+      },
+      balances: {
+        spendable: spendableBalance,
+        locked: {
+          confirmed: lockedBalances,
+          unconfirmed: unconfirmedLockedBalances
+        }
+      }
+    };
+  }
 }
 
 function help() {
@@ -168,6 +258,7 @@ function help() {
   OPTIONS:
     --all - Do every step from STEP to the last.
     --from-chain-dump
+    --format  - format numbers.
 
   STEPS:
     0, dump: Dump all coins for the wallet.
@@ -191,6 +282,7 @@ function help() {
   const fromChainDump = config.bool('from-chain-dump', false);
   const dataRoot = config.str('data-dir', os.tmpdir());
   const dataDir = path.join(dataRoot, `get-coin-info-${id}`);
+  const format = config.bool('format', false);
 
   let fileCoins = common.coinsDumpFile(dataRoot, id);
 
@@ -208,6 +300,12 @@ function help() {
   switch (step) {
     case '0':
     case 'dump': {
+      if (fromChainDump) {
+        throw new Error(
+          'Please execute ./bin/dump-coins-low before and/or skip step 0/dump.'
+        );
+      }
+
       console.log('Getting wallet coins...');
       const env = cfg.configToENV(config);
 
@@ -224,7 +322,7 @@ function help() {
       fallthrough = true;
 
     case '1':
-    case 'filter': {
+    case 'sum': {
       const info = new BalanceInfo();
       const data = await readJSON(fileCoins, true);
 
@@ -238,13 +336,57 @@ function help() {
     }
 
     case 'status': {
-      const info = await readJSON(fileSummed, false);
+      let info = await readJSON(fileSummed, false);
 
-      console.log(info);
+      if (format)
+        info = formatInfo(info);
+
+      console.log(JSON.stringify(info, null, 2));
     }
-      // 355 238
   }
 })().catch((e) => {
   console.error(e);
   process.exit(1);
 });
+
+function formatNumber(number, locale) {
+  return number.toLocaleString(locale);
+}
+
+function formatBalance(balance, locale) {
+  return (balance / 1e6).toLocaleString(locale, {
+    maximumFractionDigits: 6
+  }) + ' HNS';
+}
+
+function parseNums(obj, formatFn, locale) {
+  if (typeof obj === 'number')
+    return formatFn(obj, locale);
+
+  assert(typeof obj === 'object', 'obj needs to be an object.');
+
+  const copy = {};
+  for (const key of Object.keys(obj))
+    copy[key] = parseNums(obj[key], formatFn, locale);
+
+  return copy;
+}
+
+function formatInfo(info, locale) {
+  const balance = {
+    coin: formatNumber(info.balance.coin, locale),
+    unconfirmed: formatBalance(info.balance.unconfirmed, locale),
+    confirmed: formatBalance(info.balance.confirmed, locale),
+    lockedUnconfirmed: formatBalance(info.balance.lockedUnconfirmed, locale),
+    lockedConfirmed: formatBalance(info.balance.lockedConfirmed, locale)
+  };
+
+  const coins = parseNums(info.coins, formatNumber, locale);
+  const balances = parseNums(info.balances, formatBalance, locale);
+
+  return {
+    balance,
+    coins,
+    balances
+  };
+}
