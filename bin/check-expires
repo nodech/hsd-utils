@@ -91,6 +91,8 @@ function help() {
   const fileInTransfer = path.join(dataDir, '4-in-transfer.json');
   const fileNeedsRenew = path.join(dataDir, '4-needs-renew.json');
   const fileExpiring = path.join(dataDir, '4-expiring.json');
+  const fileRenewRequests = path.join(dataDir, '4-renew-requests.json');
+  const fileCancelRequests = path.join(dataDir, '4-cancel-requests.json');
 
   await fs.mkdirp(dataDir);
 
@@ -186,6 +188,7 @@ function help() {
 
       /* eslint-disable max-len */
       const out = `
+  Wallet: ${id}.
   Total names expire(d): ${totalNames} in last ${needsRenew.days}.
    Expired: ${expired.data.length}
    Requested transfer: ${inTransfer.data.length} - will need cancel->renew, or finalize.
@@ -194,6 +197,43 @@ function help() {
 
       console.log(out);
       break;
+    }
+
+    case 'status-renew': {
+      const split = config.int('split', 40);
+      const needsRenew = await readJSON(fileNeedsRenew, false);
+      const names = new Set();
+
+      for (const info of needsRenew.data)
+        names.add(info.name);
+
+      const arr = [...names];
+      const splitarr = [];
+
+      for (let i = 0; i < needsRenew.data.length; i += split)
+        splitarr.push(arr.slice(i, i + split));
+
+      await writeJSON(fileRenewRequests, splitarr);
+
+      if (!fallthrough)
+        break;
+    }
+
+    case 'status-cancel': {
+      const split = config.int('split', 40);
+      const inTransfer = await readJSON(fileInTransfer, false);
+      const names = new Set();
+
+      for (const info of inTransfer.data)
+        names.add(info.name);
+
+      const arr = [...names];
+      const splitarr = [];
+
+      for (let i = 0; i < inTransfer.data.length; i += split)
+        splitarr.push(arr.slice(i, i + split));
+
+      await writeJSON(fileCancelRequests, splitarr);
     }
   }
 })().catch((e) => {
