@@ -196,7 +196,7 @@ function help() {
       /* eslint-enable max-len */
 
       console.log(out);
-      break;
+      fallthrough = true;
     }
 
     case 'status-renew': {

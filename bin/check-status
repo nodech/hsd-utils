@@ -1,0 +1,243 @@
+#!/usr/bin/env node
+
+'use strict';
+
+const assert = require('bsert');
+const path = require('path');
+const fs = require('bfile');
+const cfg = require('../lib/config');
+const wallet = require('../lib/wallet');
+const node = require('../lib/node');
+const {du, exec, sizeUnits} = require('../lib/util');
+const os = require('os');
+
+function help() {
+  const help = `./bin/check-status HSD_PATH WALLET_ID
+
+  NOTE: expects HSD_WALLET_API_KEY/HSD_NODE_API_KEY to be defined.
+  NOTE: If HOME is defined, it will also check pm2 logs.`;
+
+  console.error(help);
+  process.exit(2);
+}
+
+(async () => {
+  const config = cfg.parse();
+
+  const hsdPath = config.str(0);
+  const id = config.str(1);
+
+  if (!hsdPath || !id)
+    help();
+
+  const allApiKey = config.str('api-key');
+  const walletApiKey = config.str('wallet-api-key', allApiKey);
+  const nodeApiKey = config.str('node-api-key', allApiKey);
+  const walletAdminToken = config.str('wallet-admin-token');
+
+  assert(await fs.exists(hsdPath), `"${hsdPath}" does not exist.`);
+  assert(await fs.exists(path.join(hsdPath, 'chain')),
+    `"${hsdPath}/chain" does not exist.`);
+
+  const nodeClient = node.client({
+    apiKey: nodeApiKey
+  });
+
+  console.log(walletApiKey, walletAdminToken);
+  const walletClient = wallet.client({
+    apiKey: walletApiKey,
+    token: walletAdminToken
+  });
+
+  // await logMemory();
+  // await logDisk(hsdPath);
+  // await logNodeInfo(nodeClient);
+  await logWalletInfo(walletClient, id);
+
+  /* eslint-disable max-len */
+  /* eslint-enable max-len */
+})().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
+
+/* eslint-disable max-len */
+async function logMemory() {
+  const mem = getMemoryInfo();
+
+  console.log(`Memory
+  used: ${sizeUnits(mem.used)} / ${sizeUnits(mem.total)} (${pc(mem.used, mem.total)})
+  free: ${sizeUnits(mem.available)} / ${sizeUnits(mem.total)} (${pc(mem.available, mem.total)})`);
+}
+
+async function logDisk(hsdPath) {
+  // path necessary for the mount point.
+  const disk = await getSystemInfo(hsdPath);
+  const pm2logs = await getPM2Logs();
+  const hsdSizes = await getChainSizes(hsdPath);
+
+  console.log(`Disk
+  used: ${sizeUnits(disk.used)} / ${sizeUnits(disk.total)} (${pc(disk.used, disk.total)})
+  free: ${sizeUnits(disk.available)} / ${sizeUnits(disk.total)} (${pc(disk.available, disk.total)})
+
+  PM2 Logs: ${sizeUnits(pm2logs)} (${pc(pm2logs, disk.used)} of the used)
+  HSD: ${sizeUnits(hsdSizes.total)} (${pc(hsdSizes.total, disk.used)} of the used)
+  HSD:
+    Chain: ${sizeUnits(hsdSizes.chain)} (${pc(hsdSizes.chain, hsdSizes.total)} of the hsd)
+    Tree: ${sizeUnits(hsdSizes.tree)} (${pc(hsdSizes.tree, hsdSizes.total)})
+    Blocks: ${sizeUnits(hsdSizes.blocks)} (${pc(hsdSizes.blocks, hsdSizes.total)})
+    Wallet: ${sizeUnits(hsdSizes.wallet)} (${pc(hsdSizes.wallet, hsdSizes.total)})
+    Logs: ${sizeUnits(hsdSizes.logs)} (${pc(hsdSizes.logs, hsdSizes.total)})
+    Unaccounted: ${sizeUnits(hsdSizes.extra)} (${pc(hsdSizes.extra, hsdSizes.total)})
+  `);
+}
+
+async function logNodeInfo(nodeClient) {
+  const mem = getMemoryInfo();
+  const info = await nodeClient.getInfo();
+  const bestHeight = await getBestHeightGuess(nodeClient, info.chain.height);
+
+  console.log(`HSD memory
+  used: ${sizeUnits(info.memory.total * 1024)} / ${sizeUnits(mem.total)} (${pc(info.memory.total * 1024, mem.total)} of system)
+  js-heap: ${sizeUnits(info.memory.jsHeap * 1024)} / ${sizeUnits(info.memory.total * 1024)} (${pc(info.memory.jsHeap, info.memory.total)})
+  js-total-heap: ${sizeUnits(info.memory.jsHeapTotal * 1024)} / ${sizeUnits(info.memory.total * 1024)} (${pc(info.memory.jsHeapTotal, info.memory.total)})
+  native-heap: ${sizeUnits(info.memory.nativeHeap * 1024)} / ${sizeUnits(info.memory.total * 1024)} (${pc(info.memory.nativeHeap, info.memory.total)})
+  external: ${sizeUnits(info.memory.external * 1024)} / ${sizeUnits(info.memory.total * 1024)} (${pc(info.memory.external, info.memory.total)})`);
+
+  const progress = (info.chain.progress * 100).toFixed(2);
+  console.log(`HSD Node
+  Height: ${info.chain.height} / ${bestHeight} (${pc(info.chain.height, bestHeight)}, by time: ${progress}%)
+  Connections: ${info.pool.inbound} in, ${info.pool.outbound} out
+  Mempool: ${info.mempool.tx}`);
+}
+
+async function logWalletInfo(walletClient, id) {
+  const walletinfo = await walletClient.getInfo(id);
+  console.log(walletinfo);
+}
+/* eslint-enable max-len */
+
+/**
+ * Returns system disk information in KB.
+ * @returns {Object}
+ */
+
+async function getSystemInfo(path) {
+  assert(await fs.exists(path), `"${path}" does not exist.`);
+
+  const out = await exec(['df -Pk --', path]);
+  const line = out.trim().split('\n')[1];
+
+  if (!line) {
+    throw new Error(
+      'Could not get disk stats.\n'
+      + `Check "df -Pk -- ${path}" returns at least one entry.`
+    );
+  }
+
+  const info = line.trim().split(/\s+/);
+  const used = parseInt(info[2], 10);
+  const available = parseInt(info[3], 10);
+  const total = used + available;
+
+  return {
+    used,
+    available,
+    total,
+    capacity: info[4]
+  };
+}
+
+async function getChainSizes(hsdPath) {
+  const total = await du(hsdPath);
+  const blocksPath = path.join(hsdPath, 'blocks');
+  const walletPath = path.join(hsdPath, 'wallet');
+  let blocks = 0;
+  let wallet = 0;
+
+  const chain = await du(path.join(hsdPath, 'chain'));
+  const tree = await du(path.join(hsdPath, 'tree'));
+
+  if (await fs.exists(blocksPath))
+    blocks = await du(path.join(hsdPath, 'blocks'));
+
+  if (await fs.exists(walletPath))
+    wallet = await du(path.join(hsdPath, 'wallet'));
+
+  const logs = await getChainLogs(hsdPath);
+
+  const extra = total - chain - tree - blocks - wallet - logs;
+
+  return {
+    chain,
+    tree,
+    blocks,
+    wallet,
+    logs,
+    total,
+    extra
+  };
+}
+
+/**
+ * Gather log information for fullnode.
+ * @param {String} hsdPath
+ */
+
+async function getChainLogs(hsdPath) {
+  const files = await fs.readdir(hsdPath);
+  const logRegex = /^([\w-]+)(?:_.*)?\.log$/;
+  const logFiles = files.filter(f => logRegex.test(f));
+  const all = await Promise.all(logFiles.map(f => du(path.join(hsdPath, f))));
+
+  return all.reduce((p, c) => {
+    return p + c;
+  }, 0);
+}
+
+/**
+ * Returns pm2logs directory size in KB.
+ * @returns {Promise<Number?>}
+ */
+
+async function getPM2Logs() {
+  const home = os.homedir();
+
+  if (home == null)
+    return 0;
+
+  const pm2logPath = path.join(home, '.pm2', 'logs');
+
+  if (await fs.exists(pm2logPath))
+    return du(pm2logPath);
+
+  return 0;
+}
+
+function getMemoryInfo() {
+  const total = os.totalmem() / 1024;
+  const available = os.freemem() / 1024;
+  const used = total - available;
+
+  return {
+    total,
+    used,
+    available
+  };
+}
+
+async function getBestHeightGuess(nodeClient, currentHeight) {
+  const peers = await nodeClient.execute('getpeerinfo');
+  let best = currentHeight;
+
+  for (const peer of peers) {
+    best = Math.max(best, peer.startingheight);
+    best = Math.max(best, peer.bestheight);
+  }
+
+  return best;
+}
+
+function pc(n, total) {
+  return `${(n * 100 / total).toFixed(2)}%`;
+}
