@@ -6,9 +6,9 @@ const assert = require('assert');
 const os = require('os');
 const path = require('path');
 const fs = require('bfile');
-const common = require('../lib/common');
-const cfg = require('../lib/config');
-const {writeJSON, readJSON, spawn} = require('../lib/util');
+const common = require('../../lib/common');
+const cfg = require('../../lib/config');
+const {writeJSON, readJSON, spawn} = require('../../lib/util');
 
 const SPENDABLES = new Set(['NONE', 'OPEN', 'REDEEM']);
 

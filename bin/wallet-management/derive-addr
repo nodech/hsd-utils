@@ -5,10 +5,10 @@
 const hsd = require('hsd');
 const {HDPublicKey} = hsd.hd;
 const {Address} = hsd;
-const cfg = require('../lib/config');
+const cfg = require('../../lib/config');
 
 function help() {
-  const help = `./bin/derive-addr ACCOUNT_KEY [BRANCH [INDEX]]
+  const help = `./bin/wallet-management/derive-addr ACCOUNT_KEY [BRANCH [INDEX]]
 
   OPTIONS:
     --network     main   - network.

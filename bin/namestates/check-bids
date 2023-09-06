@@ -5,14 +5,15 @@
 const os = require('os');
 const path = require('path');
 const fs = require('bfile');
-const common = require('../lib/common');
-const cfg = require('../lib/config');
-const node = require('../lib/node');
-const {writeJSON, readJSON, spawn} = require('../lib/util');
+const common = require('../../lib/common');
+const cfg = require('../../lib/config');
+const node = require('../../lib/node');
+const {writeJSON, readJSON, spawn} = require('../../lib/util');
 const {Network} = require('hsd');
 
 function help() {
-  const help = `./bin/check-bids WALLET_ID STEP TIP_HEIGHT HOURS [OPTIONS]
+  // eslint-disable-next-line max-len
+  const help = `./bin/namestates/check-bids WALLET_ID STEP TIP_HEIGHT HOURS [OPTIONS]
   OPTIONS:
     --all do from STEP to 4.
 

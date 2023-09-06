@@ -4,11 +4,12 @@
 
 const assert = require('bsert');
 const fs = require('bfile');
-const cfg = require('../lib/config');
-const wallet = require('../lib/wallet');
+const cfg = require('../../lib/config');
+const wallet = require('../../lib/wallet');
 
 function help() {
-  const help = './bin/import-bids-blinddump WALLET_ID bids blinds';
+  // eslint-disable-next-line max-len
+  const help = './bin/wallet-management/import-bids-blinddump WALLET_ID bids blinds';
 
   console.error(help);
   process.exit(2);

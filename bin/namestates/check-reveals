@@ -5,10 +5,10 @@
 const os = require('os');
 const path = require('path');
 const fs = require('bfile');
-const common = require('../lib/common');
-const cfg = require('../lib/config');
-const {writeJSON, readJSON, spawn} = require('../lib/util');
-const wallet = require('../lib/wallet');
+const common = require('../../lib/common');
+const cfg = require('../../lib/config');
+const {writeJSON, readJSON, spawn} = require('../../lib/util');
+const wallet = require('../../lib/wallet');
 
 function help() {
   const help = `./bin/check-reveals WALLET_ID [STEP] [OPTIONS]

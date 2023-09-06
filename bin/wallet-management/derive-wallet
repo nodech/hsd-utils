@@ -3,11 +3,12 @@
 'use strict';
 
 const assert = require('bsert');
-const cfg = require('../lib/config');
-const wallet = require('../lib/wallet');
+const cfg = require('../../lib/config');
+const wallet = require('../../lib/wallet');
 
 function help() {
-  const help = `./bin/derive-wallet TYPE WALLET_ID ACCOUNT UNTIL_DEPTH
+  // eslint-disable-next-line max-len
+  const help = `./bin/wallet-management/derive-wallet TYPE WALLET_ID ACCOUNT UNTIL_DEPTH
 
   TYPES:
     0 - receive

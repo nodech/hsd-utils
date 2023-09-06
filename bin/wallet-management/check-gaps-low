@@ -8,10 +8,10 @@ const fs = require('bfile');
 const blockstore = require('hsd/lib/blockstore');
 const {HDPublicKey} = hsd.hd;
 const {Address, Chain} = hsd;
-const cfg = require('../lib/config');
+const cfg = require('../../lib/config');
 
 function help() {
-  const help = `./bin/check-gaps-low CHAIN_PATH XPUB
+  const help = `./bin/wallet-management/check-gaps-low CHAIN_PATH XPUB
 
   OPTIONS:
     --branch      0      - branch (0 receive, 1 change)

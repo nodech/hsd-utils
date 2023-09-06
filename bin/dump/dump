@@ -4,13 +4,13 @@
 
 const os = require('os');
 const fs = require('bfile');
-const cfg = require('../lib/config');
-const common = require('../lib/common');
-const wallet = require('../lib/wallet');
-const {writeJSON} = require('../lib/util');
+const cfg = require('../../lib/config');
+const common = require('../../lib/common');
+const wallet = require('../../lib/wallet');
+const {writeJSON} = require('../../lib/util');
 
 function help() {
-  const help = `./bin/dump COMMAND WALLET_ID [ACCOUNT] [OPTIONS]
+  const help = `./bin/dump/dump COMMAND WALLET_ID [ACCOUNT] [OPTIONS]
   COMMANDS:
     names
     coins - supports account.

@@ -8,12 +8,12 @@ const fs = require('bfile');
 const hsd = require('hsd');
 const blockstore = require('hsd/lib/blockstore');
 const {Rules, Chain, Network} = hsd;
-const cfg = require('../lib/config');
-const util = require('../lib/util');
+const cfg = require('../../lib/config');
+const util = require('../../lib/util');
 const {readJSON, writeJSON} = util;
 
 function help() {
-  const help = `./bin/check-check-opens-unowned-low CHAIN_PATH STEP
+  const help = `./bin/namestates/check-check-opens-unowned-low CHAIN_PATH STEP
 
   OPTIONS:
     --network     main   - network.

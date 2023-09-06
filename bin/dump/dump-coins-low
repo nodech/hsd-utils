@@ -7,12 +7,12 @@ const hsd = require('hsd');
 const blockstore = require('hsd/lib/blockstore');
 const {HDPublicKey} = hsd.hd;
 const {Address, Chain} = hsd;
-const cfg = require('../lib/config');
-const common = require('../lib/common');
-const {writeJSON} = require('../lib/util');
+const cfg = require('../../lib/config');
+const common = require('../../lib/common');
+const {writeJSON} = require('../../lib/util');
 
 function help() {
-  const help = `./bin/dump-coins-low CHAIN_PATH XPUB MAX_RECV MAX_CHANGE
+  const help = `./bin/dump/dump-coins-low CHAIN_PATH XPUB MAX_RECV MAX_CHANGE
 
   OPTIONS:
     --wid          wallet    - wallet name

@@ -4,11 +4,11 @@
 
 const assert = require('bsert');
 const fs = require('bfile');
-const cfg = require('../lib/config');
-const wallet = require('../lib/wallet');
+const cfg = require('../../lib/config');
+const wallet = require('../../lib/wallet');
 
 function help() {
-  const help = './bin/import-bids WALLET_ID bids.json';
+  const help = './bin/wallet-management/import-bids WALLET_ID bids.json';
 
   console.error(help);
   process.exit(2);

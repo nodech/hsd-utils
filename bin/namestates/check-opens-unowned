@@ -5,14 +5,14 @@
 const os = require('os');
 const path = require('path');
 const fs = require('bfile');
-const common = require('../lib/common');
-const cfg = require('../lib/config');
-const node = require('../lib/node');
-const {writeJSON, readJSON, spawn} = require('../lib/util');
+const common = require('../../lib/common');
+const cfg = require('../../lib/config');
+const node = require('../../lib/node');
+const {writeJSON, readJSON, spawn} = require('../../lib/util');
 const {Network} = require('hsd');
 
 function help() {
-  const help = './bin/check-opens-unowned WALLET_ID STEP [OPTIONS]';
+  const help = './bin/namestates/check-opens-unowned WALLET_ID STEP [OPTIONS]';
 
   console.error(help);
   process.exit(2);

@@ -6,12 +6,12 @@ const hsd = require('hsd');
 const fs = require('bfile');
 const {HDPublicKey} = hsd.hd;
 const {Address} = hsd;
-const cfg = require('../lib/config');
-const wallet = require('../lib/wallet');
-const node = require('../lib/node');
+const cfg = require('../../lib/config');
+const wallet = require('../../lib/wallet');
+const node = require('../../lib/node');
 
 function help() {
-  const help = `./bin/check-gaps WALLET_ID [ACCOUNT] [OPTIONS]
+  const help = `./bin/wallet-management/check-gaps WALLET_ID [ACCOUNT] [OPTIONS]
 
   OPTIONS:
     --branch      0      - branch (0 receive, 1 change)

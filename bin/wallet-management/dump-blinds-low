@@ -6,8 +6,8 @@ const os = require('os');
 const bio = require('bufio');
 const fs = require('bfile');
 const path = require('path');
-const cfg = require('../lib/config');
-const common = require('../lib/common');
+const cfg = require('../../lib/config');
+const common = require('../../lib/common');
 
 const hsd = require('hsd');
 const Network = hsd.Network;
@@ -16,7 +16,7 @@ const layout = require('hsd/lib/wallet/layout').txdb;
 const consensus = hsd.consensus;
 
 function help() {
-  const help = `./bin/dump-blinds-low PREFIX WALLET_ID
+  const help = `./bin/wallet-management/dump-blinds-low PREFIX WALLET_ID
 
   OPTIONS:
     --data-dir - directory to dump blinds to.

@@ -5,12 +5,12 @@
 const os = require('os');
 const path = require('path');
 const fs = require('bfile');
-const common = require('../lib/common');
-const cfg = require('../lib/config');
-const {writeJSON, readJSON} = require('../lib/util');
+const common = require('../../lib/common');
+const cfg = require('../../lib/config');
+const {writeJSON, readJSON} = require('../../lib/util');
 
 function help() {
-  const help = './bin/check-crosses WALLET_ID WALLET_ID';
+  const help = './bin/namestates/check-crosses WALLET_ID WALLET_ID';
 
   console.error(help);
   process.exit(2);

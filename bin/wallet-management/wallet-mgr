@@ -2,12 +2,12 @@
 
 'use strict';
 
-const cfg = require('../lib/config');
-const wallet = require('../lib/wallet');
+const cfg = require('../../lib/config');
+const wallet = require('../../lib/wallet');
 const fs = require('bfile');
 
 function help(msg) {
-  const help = `./bin/derive-mgr ACTION WALLET_ID FILE
+  const help = `./bin/wallet-management/derive-mgr ACTION WALLET_ID FILE
 
   ACTION:
     export - export key.

@@ -6,9 +6,9 @@ const assert = require('bsert');
 const os = require('os');
 const path = require('path');
 const fs = require('bfile');
-const common = require('../lib/common');
-const cfg = require('../lib/config');
-const {writeJSON, readJSON, spawn} = require('../lib/util');
+const common = require('../../lib/common');
+const cfg = require('../../lib/config');
+const {writeJSON, readJSON, spawn} = require('../../lib/util');
 
 function filterClosed(from) {
   return from.filter(d => d.state === 'CLOSED');
@@ -53,7 +53,7 @@ function classify(from) {
 }
 
 function help() {
-  const help = `./bin/check-expires WALLET_ID STEP [DAYS] [OPTIONS]
+  const help = `./bin/namestates/check-expires WALLET_ID STEP [DAYS] [OPTIONS]
   OPTIONS:
     --all - Do every step from STEP to the last.
 
