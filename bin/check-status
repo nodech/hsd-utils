@@ -34,6 +34,7 @@ function help() {
   const walletApiKey = config.str('wallet-api-key', allApiKey);
   const nodeApiKey = config.str('node-api-key', allApiKey);
   const walletAdminToken = config.str('wallet-admin-token');
+  const json = config.bool('json', false);
 
   assert(await fs.exists(hsdPath), `"${hsdPath}" does not exist.`);
   assert(await fs.exists(path.join(hsdPath, 'chain')),
@@ -43,16 +44,44 @@ function help() {
     apiKey: nodeApiKey
   });
 
-  console.log(walletApiKey, walletAdminToken);
   const walletClient = wallet.client({
     apiKey: walletApiKey,
     token: walletAdminToken
   });
 
-  // await logMemory();
-  // await logDisk(hsdPath);
-  // await logNodeInfo(nodeClient);
-  await logWalletInfo(walletClient, id);
+  const info = {
+    memory: getMemoryInfo(),
+    disk: {
+      disk: await getSystemInfo(hsdPath),
+      pm2logs: await getPM2Logs(),
+      hsd: await getChainSizes(hsdPath)
+    },
+    node: null,
+    wallet: null
+  };
+
+  try {
+    info.node = await getNodeInfo(nodeClient);
+  } catch (e) {
+    if (!json)
+      console.error('ERROR: Could not get node info.');
+  }
+  try {
+    info.wallet = await getWalletInfo(walletClient, id);
+  } catch (e) {
+    if (!json)
+      console.error('ERROR: Could not get wallet info.', e);
+  }
+
+  if (json) {
+    console.log(JSON.stringify(info, null, 2));
+    return;
+  }
+
+  logMemory(info.memory);
+  logDisk(info.disk);
+  logNodeInfo(info.memory, info.node);
+  logWalletInfo(info.node, info.wallet);
 
   /* eslint-disable max-len */
   /* eslint-enable max-len */
@@ -62,41 +91,30 @@ function help() {
 });
 
 /* eslint-disable max-len */
-async function logMemory() {
-  const mem = getMemoryInfo();
-
+function logMemory(mem) {
   console.log(`Memory
   used: ${sizeUnits(mem.used)} / ${sizeUnits(mem.total)} (${pc(mem.used, mem.total)})
   free: ${sizeUnits(mem.available)} / ${sizeUnits(mem.total)} (${pc(mem.available, mem.total)})`);
 }
 
-async function logDisk(hsdPath) {
-  // path necessary for the mount point.
-  const disk = await getSystemInfo(hsdPath);
-  const pm2logs = await getPM2Logs();
-  const hsdSizes = await getChainSizes(hsdPath);
-
+function logDisk({ disk, pm2logs, hsd }) {
   console.log(`Disk
   used: ${sizeUnits(disk.used)} / ${sizeUnits(disk.total)} (${pc(disk.used, disk.total)})
   free: ${sizeUnits(disk.available)} / ${sizeUnits(disk.total)} (${pc(disk.available, disk.total)})
 
   PM2 Logs: ${sizeUnits(pm2logs)} (${pc(pm2logs, disk.used)} of the used)
-  HSD: ${sizeUnits(hsdSizes.total)} (${pc(hsdSizes.total, disk.used)} of the used)
+  HSD: ${sizeUnits(hsd.total)} (${pc(hsd.total, disk.used)} of the used)
   HSD:
-    Chain: ${sizeUnits(hsdSizes.chain)} (${pc(hsdSizes.chain, hsdSizes.total)} of the hsd)
-    Tree: ${sizeUnits(hsdSizes.tree)} (${pc(hsdSizes.tree, hsdSizes.total)})
-    Blocks: ${sizeUnits(hsdSizes.blocks)} (${pc(hsdSizes.blocks, hsdSizes.total)})
-    Wallet: ${sizeUnits(hsdSizes.wallet)} (${pc(hsdSizes.wallet, hsdSizes.total)})
-    Logs: ${sizeUnits(hsdSizes.logs)} (${pc(hsdSizes.logs, hsdSizes.total)})
-    Unaccounted: ${sizeUnits(hsdSizes.extra)} (${pc(hsdSizes.extra, hsdSizes.total)})
+    Chain: ${sizeUnits(hsd.chain)} (${pc(hsd.chain, hsd.total)} of the hsd)
+    Tree: ${sizeUnits(hsd.tree)} (${pc(hsd.tree, hsd.total)})
+    Blocks: ${sizeUnits(hsd.blocks)} (${pc(hsd.blocks, hsd.total)})
+    Wallet: ${sizeUnits(hsd.wallet)} (${pc(hsd.wallet, hsd.total)})
+    Logs: ${sizeUnits(hsd.logs)} (${pc(hsd.logs, hsd.total)})
+    Unaccounted: ${sizeUnits(hsd.extra)} (${pc(hsd.extra, hsd.total)})
   `);
 }
 
-async function logNodeInfo(nodeClient) {
-  const mem = getMemoryInfo();
-  const info = await nodeClient.getInfo();
-  const bestHeight = await getBestHeightGuess(nodeClient, info.chain.height);
-
+function logNodeInfo(mem, { info, bestHeight }) {
   console.log(`HSD memory
   used: ${sizeUnits(info.memory.total * 1024)} / ${sizeUnits(mem.total)} (${pc(info.memory.total * 1024, mem.total)} of system)
   js-heap: ${sizeUnits(info.memory.jsHeap * 1024)} / ${sizeUnits(info.memory.total * 1024)} (${pc(info.memory.jsHeap, info.memory.total)})
@@ -111,10 +129,19 @@ async function logNodeInfo(nodeClient) {
   Mempool: ${info.mempool.tx}`);
 }
 
-async function logWalletInfo(walletClient, id) {
-  const walletinfo = await walletClient.getInfo(id);
-  console.log(walletinfo);
+function logWalletInfo(ninfo, winfo) {
+  const {wallet, height} = winfo;
+  const {balance} = wallet;
+  console.log(wallet);
+  console.log(`Wallet "${wallet.id}"
+    Height: ${height}/${ninfo.bestHeight} (${pc(height, ninfo.bestHeight)})
+    TX Count: ${balance.tx}
+    Coin Count: ${balance.coin}
+    Confirmed Balance: ${amount(balance.confirmed)}
+    Unconfirmed Balance: ${amount(balance.unconfirmed)}
+  `);
 }
+
 /* eslint-enable max-len */
 
 /**
@@ -240,4 +267,30 @@ async function getBestHeightGuess(nodeClient, currentHeight) {
 
 function pc(n, total) {
   return `${(n * 100 / total).toFixed(2)}%`;
+}
+
+async function getNodeInfo(nodeClient) {
+  const info = await nodeClient.getInfo();
+  const bestHeight = await getBestHeightGuess(nodeClient, info.chain.height);
+
+  return {
+    info,
+    bestHeight
+  };
+}
+
+async function getWalletInfo(wclient, wid) {
+  const wallet = await wclient.getInfo(wid);
+
+  await wclient.execute('selectwallet', [wid]);
+  const rpcinfo = await wclient.execute('getwalletinfo');
+
+  return {
+    wallet,
+    height: rpcinfo.height
+  };
+}
+
+function amount(doos) {
+  return `${(doos / 1e6).toFixed(6)} HNS`;
 }

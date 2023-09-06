@@ -4,7 +4,8 @@
   "description": "",
   "main": "lib/utils.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "lint": "eslint ./bin/* ./lib/*.js"
   },
   "repository": {
     "type": "git",
@@ -17,13 +18,13 @@
   },
   "homepage": "https://github.com/nodech/hsw-wallet-utils#readme",
   "dependencies": {
-    "bcfg": "^0.1.7",
-    "bcurl": "^0.2.0",
-    "bfile": "^0.2.2",
-    "brq": "^0.1.8",
-    "bsert": "^0.0.10",
-    "bval": "^0.1.6",
-    "hs-client": "^0.0.11",
-    "hsd": "^5.0.1"
+    "bcfg": "^0.2.2",
+    "bcurl": "^0.2.1",
+    "bfile": "^0.2.3",
+    "brq": "^0.1.10",
+    "bsert": "^0.0.12",
+    "bval": "^0.1.8",
+    "hs-client": "^6.0.0",
+    "hsd": "^6.1.0"
   }
 }
