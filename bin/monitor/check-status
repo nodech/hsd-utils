@@ -8,7 +8,7 @@ const fs = require('bfile');
 const cfg = require('../lib/config');
 const wallet = require('../lib/wallet');
 const node = require('../lib/node');
-const {du, exec, sizeUnits} = require('../lib/util');
+const {du, exec, sizeUnits, amount, timeUnits} = require('../lib/util');
 const os = require('os');
 
 function help() {
@@ -35,6 +35,8 @@ function help() {
   const nodeApiKey = config.str('node-api-key', allApiKey);
   const walletAdminToken = config.str('wallet-admin-token');
   const json = config.bool('json', false);
+  const requestLogEntries = config.int('request-log-entries', 5000);
+  const requestLog = config.int('request-log', 60 * 60);
 
   assert(await fs.exists(hsdPath), `"${hsdPath}" does not exist.`);
   assert(await fs.exists(path.join(hsdPath, 'chain')),
@@ -50,6 +52,7 @@ function help() {
   });
 
   const info = {
+    timestamp: Date.now(),
     memory: getMemoryInfo(),
     disk: {
       disk: await getSystemInfo(hsdPath),
@@ -57,7 +60,8 @@ function help() {
       hsd: await getChainSizes(hsdPath)
     },
     node: null,
-    wallet: null
+    wallet: null,
+    walletHTTP: null
   };
 
   try {
@@ -73,6 +77,8 @@ function help() {
       console.error('ERROR: Could not get wallet info.', e);
   }
 
+  info.walletHTTP = await getLastRequests(hsdPath, requestLogEntries);
+
   if (json) {
     console.log(JSON.stringify(info, null, 2));
     return;
@@ -82,13 +88,15 @@ function help() {
   logDisk(info.disk);
   logNodeInfo(info.memory, info.node);
   logWalletInfo(info.node, info.wallet);
-
-  /* eslint-disable max-len */
-  /* eslint-enable max-len */
+  logLastRequests(info.walletHTTP, requestLogEntries, requestLog);
 })().catch((e) => {
   console.error(e);
   process.exit(1);
 });
+
+/*
+ * Log stuff
+ */
 
 /* eslint-disable max-len */
 function logMemory(mem) {
@@ -132,17 +140,45 @@ function logNodeInfo(mem, { info, bestHeight }) {
 function logWalletInfo(ninfo, winfo) {
   const {wallet, height} = winfo;
   const {balance} = wallet;
-  console.log(wallet);
   console.log(`Wallet "${wallet.id}"
     Height: ${height}/${ninfo.bestHeight} (${pc(height, ninfo.bestHeight)})
     TX Count: ${balance.tx}
     Coin Count: ${balance.coin}
     Confirmed Balance: ${amount(balance.confirmed)}
-    Unconfirmed Balance: ${amount(balance.unconfirmed)}
-  `);
+    Unconfirmed Balance: ${amount(balance.unconfirmed)}`);
+}
+
+function logLastRequests(requests, entries, range = 60 * 60) {
+  if (!requests)
+    return;
+
+  const date = Date.now();
+  const lastHour = date - (range * 1000);
+
+  const lastRequestMap = requests
+    .filter(req => req.timestamp > lastHour)
+    .reduce((acc, req) => {
+      const method = req.request.pathname;
+      const count = acc.get(method) || 0;
+      acc.set(method, count + 1);
+
+      return acc;
+    }, new Map());
+  const requestList = Array.from(lastRequestMap.entries())
+    .sort((a, b) => b[1] - a[1]);
+
+  console.log(`Last WALLET requests in ${timeUnits(range)} filtered from last ${entries} entries:`);
+
+  for (const request of requestList) {
+    console.log(`  ${request[0]}: ${request[1]}`);
+  }
 }
 
 /* eslint-enable max-len */
+
+/*
+ * Gather information
+ */
 
 /**
  * Returns system disk information in KB.
@@ -291,6 +327,19 @@ async function getWalletInfo(wclient, wid) {
   };
 }
 
-function amount(doos) {
-  return `${(doos / 1e6).toFixed(6)} HNS`;
+async function getLastRequests(hsdPath, entries = 5000) {
+  const logFile = path.join(hsdPath, 'wallet-http.log');
+
+  if (!await fs.exists(logFile))
+    return null;
+
+  // eslint-disable-next-line max-len
+  const command = `tail -n ${entries} ${logFile} | grep -v '"method":"GET"' | grep '"type":"finish"'`;
+  const out = await exec([command]);
+  const lines = out.split('\n')
+    .map(l => l.trim())
+    .filter(l => l !== '')
+    .map(l => JSON.parse(l));
+
+  return lines;
 }
