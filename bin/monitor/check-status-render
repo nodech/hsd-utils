@@ -23,9 +23,13 @@ let WIDTH = 60;
 
   const name = config.str(0, 'HSD');
   WIDTH = config.int('width', 60);
+  const forcetty = config.bool('forcetty', false);
   const limit = config.int('limit', 10);
 
   const info = await readJSONFromStdin();
+
+  if (forcetty)
+    process.stdout.isTTY = true;
 
   const {
     memory,
@@ -67,6 +71,7 @@ let WIDTH = 60;
       tipHeight: node.bestHeight
     });
     inOut('pool: ', node.info.pool.inbound, node.info.pool.outbound);
+    mempool('memp: ', node.info.mempool);
   }
 
   if (node && wallet) {
@@ -124,7 +129,7 @@ function usedDisk(options) {
   const total = options.total;
   const fill = options.fill;
   const pm2 = diskAll.pm2logs;
-  const hsd = { ...diskAll.hsd };
+  const hsd = { ...diskAll.hsd, pm2 };
 
   delete hsd.total;
 
@@ -132,15 +137,10 @@ function usedDisk(options) {
 
   for (const [name, value] of Object.entries(hsd)) {
     items.push({
-      text: name,
+      text: name + `(${sizeUnits(value)})`,
       value: value
     });
   }
-
-  items.push({
-    text: 'pm2',
-    value: pm2
-  });
 
   items.sort((a, b) => {
     return b.value - a.value;
@@ -248,22 +248,56 @@ function inOut(prefix, inValue, outValue) {
   });
 }
 
+function mempool(prefix, mempool) {
+  const items = [{
+    text: `tx(${mempool.tx})`,
+    value: mempool.tx
+  }, {
+    text: `orph(${mempool.orphans})`,
+    value: mempool.orphans
+  }];
+
+  const colors = [{
+    bg: BG.BLUE,
+    fg: FG.BLACK
+  }, {
+    bg: BG.RED,
+    fg: FG.BLACK
+  }];
+
+  const total = mempool.tx + mempool.orphans;
+
+  widgets.barline({
+    width: WIDTH,
+    fill: true,
+    suffix: `${total}`.padStart(3).padEnd(4),
+    colors,
+    prefix,
+    items,
+    total
+  });
+}
+
 function balance(balance) {
   const headers = [
-    { text: 'coin', pc: 25 },
-    { text: 'tx', pc: 25 },
-    { text: 'confirmed', pc: 50 }
+    { text: 'coin', pc: 20 },
+    { text: 'tx', pc: 20 },
+    { text: 'confirmed', pc: 30 },
+    { text: 'locked', pc: 30 }
   ];
 
-  const confirmed = balance.confirmed / 1e6;
-  const formatted = new Intl.NumberFormat(undefined, {
+  const formatter = new Intl.NumberFormat(undefined, {
     maximumFractionDigits: 6
-  }).format(confirmed);
+  });
+
+  const confirmed = (balance.confirmed - balance.lockedConfirmed) / 1e6;
+  const locked = balance.lockedConfirmed / 1e6;
+
   const values = {
     coin: balance.coin.toLocaleString(),
     tx: balance.tx.toLocaleString(),
-    // confirmed: amount(balance.confirmed)
-    confirmed: formatted
+    confirmed: formatter.format(confirmed),
+    locked: formatter.format(locked)
   };
 
   widgets.table({
