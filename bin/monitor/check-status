@@ -352,7 +352,14 @@ async function getLastRequests(hsdPath, entries = 5000) {
 
   // eslint-disable-next-line max-len
   const command = `tail -n ${entries} ${logFile} | grep -v '"method":"GET"' | grep '"type":"finish"'`;
-  const out = await exec([command]);
+  let out = '';
+
+  try {
+    out = await exec([command]);
+  } catch (e) {
+    ;
+  }
+
   const lines = out.split('\n')
     .map(l => l.trim())
     .filter(l => l !== '')
