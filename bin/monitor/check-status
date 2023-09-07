@@ -91,7 +91,7 @@ function help() {
   logDisk(info.disk);
   logNodeInfo(info.memory, info.node);
   logWalletInfo(info.node, info.wallet);
-  logLastRequests(info.walletHTTP, requestLogEntries, requestLog);
+  logLastRequests(info.walletHTTP.requests, requestLogEntries, requestLog);
 })().catch((e) => {
   console.error(e);
   process.exit(1);
