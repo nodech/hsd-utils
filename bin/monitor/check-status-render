@@ -39,14 +39,15 @@ let WIDTH = 60;
     walletHTTP
   } = info;
 
-  console.log(`--- RAM - ${name} ---`);
+  console.log(`--- ${name} ---`);
+  console.log('--- RAM  ---');
   generic2Bar(memory, 'RAM:  ');
   if (node) {
     usedRam('used: ', node, memory.used);
     usedRam('heap: ', node, node.info.memory.total * 1024);
   }
 
-  console.log(`--- Disk - ${name} ---`);
+  console.log('--- Disk ---');
   generic2Bar(disk.disk, 'DISK: ');
 
   usedDisk({
@@ -64,7 +65,7 @@ let WIDTH = 60;
   });
 
   if (node) {
-    console.log(`--- Node - ${name} ---`);
+    console.log(`--- Node - ${node.info.version} ---`);
     syncBar({
       prefix: 'sync: ',
       height: node.info.chain.height,
@@ -75,7 +76,7 @@ let WIDTH = 60;
   }
 
   if (node && wallet) {
-    console.log(`--- Wallet - ${name} ---`);
+    console.log('--- Wallet ---');
     syncBar({
       prefix: 'sync: ',
       height: wallet.height,
