@@ -1,0 +1,335 @@
+#!/usr/bin/env node
+
+'use strict';
+
+const cfg = require('../../lib/config');
+const {sizeUnits, timeUnits} = require('../../lib/util');
+const {widgets, color} = require('../../lib/ui');
+const {BG, FG} = color;
+
+const COLOR_LIST = [
+  { bg: BG.RED, fg: FG.BLACK },
+  { bg: BG.YELLOW, fg: FG.BLACK },
+  { bg: BG.MAGENTA, fg: FG.BLACK },
+  { bg: BG.CYAN, fg: FG.BLACK },
+  { bg: BG.BLUE, fg: FG.BLACK },
+  { bg: BG.MAGENTA, fg: FG.BLACK }
+];
+
+let WIDTH = 60;
+
+(async () => {
+  const config = cfg.parse();
+
+  const name = config.str(0, 'HSD');
+  WIDTH = config.int('width', 60);
+  const limit = config.int('limit', 10);
+
+  const info = await readJSONFromStdin();
+
+  const {
+    memory,
+    disk,
+    node,
+    wallet,
+    walletHTTP
+  } = info;
+
+  console.log(`--- RAM - ${name} ---`);
+  generic2Bar(memory, 'RAM:  ');
+  if (node) {
+    usedRam('used: ', node, memory.used);
+    usedRam('heap: ', node, node.info.memory.total * 1024);
+  }
+
+  console.log(`--- Disk - ${name} ---`);
+  generic2Bar(disk.disk, 'DISK: ');
+
+  usedDisk({
+    prefix: 'used: ',
+    diskAll: disk,
+    total: disk.disk.used,
+    fille: false
+  });
+
+  usedDisk({
+    prefix: 'proj: ',
+    diskAll: disk,
+    total: disk.hsd.total + disk.pm2logs,
+    fill: true
+  });
+
+  if (node) {
+    console.log(`--- Node - ${name} ---`);
+    syncBar({
+      prefix: 'sync: ',
+      height: node.info.chain.height,
+      tipHeight: node.bestHeight
+    });
+    inOut('pool: ', node.info.pool.inbound, node.info.pool.outbound);
+  }
+
+  if (node && wallet) {
+    console.log(`--- Wallet - ${name} ---`);
+    syncBar({
+      prefix: 'sync: ',
+      height: wallet.height,
+      tipHeight: node.info.chain.height
+    });
+
+    console.log('');
+    balance(wallet.wallet.balance);
+    console.log('');
+  }
+
+  if (walletHTTP) {
+    httpStats(walletHTTP, limit);
+  }
+})().catch((err) => {
+  console.error(err.stack);
+});
+
+/* eslint-disable max-len */
+function generic2Bar(diskram, prefix) {
+  const used = diskram.used / diskram.total * 100;
+
+  const color = {
+    bg: BG.GREEN,
+    fg: FG.BLACK
+  };
+
+  if (used > 50)
+    color.bg = BG.YELLOW;
+
+  if (used > 75)
+    color.bg = BG.RED;
+
+  widgets.barline({
+    width: WIDTH,
+    prefix: prefix,
+    suffix: `${sizeUnits(diskram.total).padStart(10)}`,
+    defaultText: sizeUnits(diskram.available),
+    colors: [color],
+    items: [{
+      text: sizeUnits(diskram.used),
+      value: diskram.used
+    }],
+    total: diskram.total
+  });
+}
+
+function usedDisk(options) {
+  const prefix = options.prefix;
+  const diskAll = options.diskAll;
+  const total = options.total;
+  const fill = options.fill;
+  const pm2 = diskAll.pm2logs;
+  const hsd = { ...diskAll.hsd };
+
+  delete hsd.total;
+
+  const items = [];
+
+  for (const [name, value] of Object.entries(hsd)) {
+    items.push({
+      text: name,
+      value: value
+    });
+  }
+
+  items.push({
+    text: 'pm2',
+    value: pm2
+  });
+
+  items.sort((a, b) => {
+    return b.value - a.value;
+  });
+
+  widgets.barline({
+    width: WIDTH,
+    prefix: prefix,
+    suffix: `${sizeUnits(total).padStart(10)}`,
+    defaultText: 'sys/other',
+    colors: COLOR_LIST,
+    fill,
+    total,
+    items
+  });
+}
+
+function usedRam(prefix, node, total) {
+  const memory = node.info.memory;
+
+  const mb = 1024;
+  const items = [];
+
+  const jsHeapTotal = memory.jsHeapTotal * mb;
+  const nativeHeap = memory.nativeHeap * mb;
+
+  items.push({
+    text: `jsheap ${sizeUnits(jsHeapTotal)}`,
+    value: jsHeapTotal
+  });
+
+  items.push({
+    text: `natheap ${sizeUnits(nativeHeap)}`,
+    value: memory.nativeHeap * mb
+  });
+
+  widgets.barline({
+    width: WIDTH,
+    prefix: prefix,
+    suffix: `${sizeUnits(total).padStart(10)}`,
+    defaultText: 'other',
+    colors: COLOR_LIST,
+    total,
+    items
+  });
+}
+
+function syncBar(options) {
+  const {prefix, height, tipHeight} = options;
+
+  const color = {
+    bg: BG.GREEN,
+    fg: FG.BLACK
+  };
+
+  if (tipHeight < height)
+    color.bg = BG.YELLOW;
+
+  if (height < tipHeight / 2)
+    color.bg = BG.RED;
+
+  const items = [{
+    text: `${height}`,
+    value: height
+  }];
+
+  widgets.barline({
+    width: WIDTH,
+    prefix: prefix,
+    suffix: `${(height / tipHeight * 100).toFixed(0)}%`.padStart(4),
+    defaultText: `${tipHeight}`,
+    colors: [color],
+    items,
+    total: tipHeight
+  });
+}
+
+function inOut(prefix, inValue, outValue) {
+  const items = [{
+    text: `in(${inValue})`,
+    value: inValue
+  }, {
+    text: `out(${outValue})`,
+    value: outValue
+  }];
+
+  const colors = [{
+    bg: BG.MAGENTA,
+    fg: FG.BLACK
+  }, {
+    bg: BG.CYAN,
+    fg: FG.BLACK
+  }];
+
+  const total = inValue + outValue;
+
+  widgets.barline({
+    width: WIDTH,
+    fill: true,
+    suffix: `${total}`.padStart(3).padEnd(4),
+    colors,
+    prefix,
+    items,
+    total
+  });
+}
+
+function balance(balance) {
+  const headers = [
+    { text: 'coin', pc: 25 },
+    { text: 'tx', pc: 25 },
+    { text: 'confirmed', pc: 50 }
+  ];
+
+  const confirmed = balance.confirmed / 1e6;
+  const formatted = new Intl.NumberFormat(undefined, {
+    maximumFractionDigits: 6
+  }).format(confirmed);
+  const values = {
+    coin: balance.coin.toLocaleString(),
+    tx: balance.tx.toLocaleString(),
+    // confirmed: amount(balance.confirmed)
+    confirmed: formatted
+  };
+
+  widgets.table({
+    width: WIDTH,
+    headers,
+    rows: [
+      values
+    ]
+  });
+}
+
+function httpStats(http, limit) {
+  const duration = http.duration;
+  const requests = http.requests;
+
+  console.log(`Last HTTP requests (${requests.length})(${timeUnits(duration)}):`);
+
+  const requestCountByEndpoint = requests.reduce((map, {request}) => {
+    const endpoint = request.pathname;
+
+    if (!map.has(endpoint))
+      map.set(endpoint, 0);
+
+    map.set(endpoint, map.get(endpoint) + 1);
+
+    return map;
+  }, new Map());
+
+  const requestEntries = Array.from(requestCountByEndpoint.entries());
+  requestEntries.sort((a, b) => {
+    return b[1] - a[1];
+  });
+
+  for (let i = 0; i < limit; i++) {
+    const entry = requestEntries[i];
+
+    if (!entry)
+      break;
+
+    const endpoint = entry[0];
+    const count = entry[1];
+
+    process.stdout.write('  ');
+    widgets.overlapBox({
+      width: WIDTH - 2,
+      boxPercent: count / requests.length,
+      text: endpoint + ' - ' + count,
+      textColor: FG.BLACK,
+      defaultTextColor: FG.WHITE,
+      boxColor: BG.GREEN
+    });
+  }
+}
+
+/** eslint-enable max-len */
+
+async function readJSONFromStdin() {
+  const stdin = process.stdin;
+  const chunks = [];
+
+  stdin.resume();
+  stdin.setEncoding('utf8');
+
+  for await (const chunk of stdin) {
+    chunks.push(chunk);
+  }
+
+  return JSON.parse(chunks.join(''));
+}
