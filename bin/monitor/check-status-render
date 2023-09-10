@@ -2,19 +2,14 @@
 
 'use strict';
 
+const assert = require('bsert');
 const cfg = require('../../lib/config');
 const {sizeUnits, timeUnits} = require('../../lib/util');
-const {widgets, color} = require('../../lib/ui');
+const ui = require('../../lib/ui');
+const {widgets, color} = ui;
 const {BG, FG} = color;
 
-const COLOR_LIST = [
-  { bg: BG.RED, fg: FG.BLACK },
-  { bg: BG.YELLOW, fg: FG.BLACK },
-  { bg: BG.MAGENTA, fg: FG.BLACK },
-  { bg: BG.CYAN, fg: FG.BLACK },
-  { bg: BG.BLUE, fg: FG.BLACK },
-  { bg: BG.MAGENTA, fg: FG.BLACK }
-];
+const COLOR_LIST = ui.defaultColorList;
 
 let WIDTH = 60;
 
@@ -32,6 +27,7 @@ let WIDTH = 60;
     process.stdout.isTTY = true;
 
   const {
+    timestamp,
     memory,
     disk,
     node,
@@ -39,6 +35,8 @@ let WIDTH = 60;
     walletHTTP
   } = info;
 
+  const date = new Date(timestamp);
+  console.log(`--- ${date} --- `);
   console.log(`--- ${name} ---`);
   console.log('--- RAM  ---');
   generic2Bar(memory, 'RAM:  ');
@@ -115,7 +113,7 @@ function generic2Bar(diskram, prefix) {
     prefix: prefix,
     suffix: `${sizeUnits(diskram.total).padStart(10)}`,
     defaultText: sizeUnits(diskram.available),
-    colors: [color],
+    colorFn: ui.util.nextColor([color]),
     items: [{
       text: sizeUnits(diskram.used),
       value: diskram.used
@@ -213,7 +211,7 @@ function syncBar(options) {
     prefix: prefix,
     suffix: `${(height / tipHeight * 100).toFixed(0)}%`.padStart(4),
     defaultText: `${tipHeight}`,
-    colors: [color],
+    colorFn: ui.util.nextColor([color]),
     items,
     total: tipHeight
   });
@@ -242,7 +240,7 @@ function inOut(prefix, inValue, outValue) {
     width: WIDTH,
     fill: true,
     suffix: `${total}`.padStart(3).padEnd(4),
-    colors,
+    colorFn: ui.util.nextColor(colors),
     prefix,
     items,
     total
@@ -272,7 +270,7 @@ function mempool(prefix, mempool) {
     width: WIDTH,
     fill: true,
     suffix: `${total}`.padStart(3).padEnd(4),
-    colors,
+    colorFn: ui.util.nextColor(colors),
     prefix,
     items,
     total
@@ -312,45 +310,149 @@ function balance(balance) {
 
 function httpStats(http, limit) {
   const duration = http.duration;
-  const requests = http.requests;
+  const requestEntries = http.requests;
 
-  console.log(`Last HTTP requests (${requests.length})(${timeUnits(duration)}):`);
+  console.log(`Last HTTP requests (${requestEntries.length})(${timeUnits(duration)}):`);
 
-  const requestCountByEndpoint = requests.reduce((map, {request}) => {
-    const endpoint = request.pathname;
+  const countByEndpoint = new Map();
+  const statusesByEndpoint = new Map();
 
-    if (!map.has(endpoint))
-      map.set(endpoint, 0);
+  for (const entry of requestEntries) {
+    const endpoint = entry.request.pathname;
+    const status = entry.response.status;
 
-    map.set(endpoint, map.get(endpoint) + 1);
+    // count per endpoint
+    const endpointCount = countByEndpoint.get(endpoint) || 0;
+    countByEndpoint.set(endpoint, endpointCount + 1);
 
-    return map;
-  }, new Map());
+    // collect statuses per endpoint
+    const endpointStatuses = statusesByEndpoint.get(endpoint) || new Map();
+    const endpointStatusCount = endpointStatuses.get(status) || 0;
+    endpointStatuses.set(status, endpointStatusCount + 1);
+    statusesByEndpoint.set(endpoint, endpointStatuses);
+  }
 
-  const requestEntries = Array.from(requestCountByEndpoint.entries());
-  requestEntries.sort((a, b) => {
+  // sort count per endpoint
+  const endpointEntries = Array.from(countByEndpoint.entries());
+  endpointEntries.sort((a, b) => {
     return b[1] - a[1];
   });
 
+  // sort status counts.
+  const statusBoxEntries = new Map();
+  for (const [endpoint , statuses] of statusesByEndpoint.entries()) {
+    const statusEntries = Array.from(statuses.entries());
+
+    statusEntries.sort((a, b) => {
+      return b[1] - a[1];
+    });
+
+    statusBoxEntries.set(endpoint, statusEntries);
+  }
+
+  assert(endpointEntries.length === statusBoxEntries.size);
+
+  // Table rows
+  const endpointNNumberRenders = [];
+  const statusRenders = [];
+
+  // Collect the top N endpoints
   for (let i = 0; i < limit; i++) {
-    const entry = requestEntries[i];
+    const entry = endpointEntries[i];
 
     if (!entry)
       break;
 
     const endpoint = entry[0];
     const count = entry[1];
+    const statuses = statusBoxEntries.get(endpoint);
 
-    process.stdout.write('  ');
+    const endpointOut = collectOut();
+    const statusesOut = collectOut();
+
+    const endpointWidth = Math.floor(WIDTH * 0.7);
+    const statusWidth = WIDTH - endpointWidth;
+
+    // render endpoint box
+    endpointOut.write('  ');
     widgets.overlapBox({
-      width: WIDTH - 2,
-      boxPercent: count / requests.length,
+      out: endpointOut,
+      width: endpointWidth - 2,
+      boxPercent: count / requestEntries.length,
       text: endpoint + ' - ' + count,
       textColor: FG.BLACK,
       defaultTextColor: FG.WHITE,
-      boxColor: BG.GREEN
+      boxColor: BG.GREEN,
+      nl: false
     });
+
+    endpointNNumberRenders.push(endpointOut.render());
+
+    // render status boxes
+    const total = statuses.reduce((acc, [status, count]) => {
+      return acc + count;
+    }, 0);
+
+    const entries = statuses.map(([status, count]) => {
+      return {
+        text: `${status} - ${count}`,
+        value: count,
+        code: status
+      };
+    });
+
+    const colorByStatus = (item) => {
+      const entry = item.source;
+      const code = entry.code;
+
+      if (code < 200)
+        return { bg: BG.WHITE, fg: FG.BLACK };
+
+      if (code >= 200 && code < 300)
+        return { bg: BG.GREEN, fg: FG.BLACK };
+
+      if (code >= 300 && code < 400)
+        return { bg: BG.BLUE, fg: FG.BLACK };
+
+      if (code >= 400 && code < 500)
+        return { bg: BG.YELLOW, fg: FG.BLACK };
+
+      if (code >= 500)
+        return { bg: BG.RED, fg: FG.BLACK };
+
+      return { bg: BG.MAGENTA, fg: FG.BLACK };
+    };
+
+    widgets.barline({
+      out: statusesOut,
+      width: statusWidth,
+      fill: true,
+      colorFn: colorByStatus,
+      total,
+      items: entries,
+      nl: false
+    });
+
+    statusRenders.push(statusesOut.render());
   }
+
+  widgets.table({
+    width: WIDTH,
+    center: false,
+    headers: [{
+      text: 'count',
+      pc: 70
+    }, {
+      text: 'status',
+      pc: 30
+    }],
+    rows: endpointNNumberRenders.map((endpoint, i) => {
+      return {
+        count: endpoint,
+        status: statusRenders[i]
+      };
+    })
+  });
 }
 
 /** eslint-enable max-len */
@@ -367,4 +469,17 @@ async function readJSONFromStdin() {
   }
 
   return JSON.parse(chunks.join(''));
+}
+
+function collectOut() {
+  const written = [];
+
+  return {
+    write(str) {
+      written.push(str);
+    },
+    render() {
+      return written.join('');
+    }
+  };
 }
