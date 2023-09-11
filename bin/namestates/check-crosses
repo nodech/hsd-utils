@@ -10,7 +10,8 @@ const cfg = require('../../lib/config');
 const {writeJSON, readJSON} = require('../../lib/util');
 
 function help() {
-  const help = './bin/namestates/check-crosses WALLET_ID WALLET_ID';
+  const help = `Usage: ./bin/namestates/check-crosses WALLET_ID_1 WALLET_ID_2
+Find names that are mentioned in both wallets.`;
 
   console.error(help);
   process.exit(2);

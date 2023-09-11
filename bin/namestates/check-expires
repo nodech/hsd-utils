@@ -53,7 +53,10 @@ function classify(from) {
 }
 
 function help() {
-  const help = `./bin/namestates/check-expires WALLET_ID STEP [DAYS] [OPTIONS]
+  // eslint-disable-next-line max-len
+  const help = `Usage: ./bin/namestates/check-expires WALLET_ID STEP [DAYS] [OPTIONS]
+Dump expired, expiring (within DAYS) and in transfer names for wallet.
+
   OPTIONS:
     --all - Do every step from STEP to the last.
 

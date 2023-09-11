@@ -13,7 +13,9 @@ const {Network} = require('hsd');
 
 function help() {
   // eslint-disable-next-line max-len
-  const help = `./bin/namestates/check-bids WALLET_ID STEP TIP_HEIGHT HOURS [OPTIONS]
+  const help = `Usage: ./bin/namestates/check-bids WALLET_ID STEP TIP_HEIGHT HOURS [OPTIONS]
+Dump bids that are lost or need reveal (within HOURS).
+
   OPTIONS:
     --all do from STEP to 4.
 
