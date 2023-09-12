@@ -5,7 +5,7 @@
 const os = require('os');
 const path = require('path');
 const fs = require('bfile');
-const common = require('../../lib/common');
+const paths = require('../../lib/paths');
 const cfg = require('../../lib/config');
 const {writeJSON, readJSON, spawn} = require('../../lib/util');
 const wallet = require('../../lib/wallet');
@@ -38,8 +38,8 @@ function help() {
 
   const client = wallet.client();
   const dataRoot = config.str('data-dir', os.tmpdir());
-  const dataDir = path.join(dataRoot, `check-reveals-${id}`);
-  const fileOwnNames = common.namesDumpFile(dataRoot, id);
+  const dataDir = path.join(dataRoot, `check-revealsnamestate-${id}`);
+  const fileOwnNames = paths.namesDumpFile(dataRoot, id);
   const fileFiltered = path.join(dataDir, '1-filter-reveals.json');
   const fileByHoursClosed = path.join(dataDir, '2-sorted-by-reveal-end.json');
   const fileRevealed = path.join(dataDir, '3-revealed.json');
@@ -56,7 +56,7 @@ function help() {
     case 'dump': {
       console.log('Getting wallet names...');
 
-      await spawn(common.execs.dump, ['names', id], {
+      await spawn(paths.execs.dump, ['names', id], {
         env: cfg.configToENV(config)
       });
 

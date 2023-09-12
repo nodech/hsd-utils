@@ -5,7 +5,7 @@
 const os = require('os');
 const fs = require('bfile');
 const cfg = require('../../lib/config');
-const common = require('../../lib/common');
+const paths = require('../../lib/paths');
 const wallet = require('../../lib/wallet');
 const {writeJSON} = require('../../lib/util');
 
@@ -46,8 +46,8 @@ function help() {
 
   switch (cmd) {
     case 'names': {
-      const namesDir = common.namesDumpDir(dataRoot, id);
-      const namesFile = common.namesDumpFile(dataRoot, id);
+      const namesDir = paths.namesDumpDir(dataRoot, id);
+      const namesFile = paths.namesDumpFile(dataRoot, id);
       await fs.mkdirp(namesDir);
 
       console.error('Dumping names...');
@@ -69,8 +69,8 @@ function help() {
 
     case 'coins': {
       const account = config.str(2);
-      const coinsDir = common.coinsDumpDir(dataRoot, id);
-      const coinsFile = common.coinsDumpFile(dataRoot, id, account);
+      const coinsDir = paths.coinsDumpDir(dataRoot, id);
+      const coinsFile = paths.coinsDumpFile(dataRoot, id, account);
       await fs.mkdirp(coinsDir);
 
       console.error('Dumping coins...');

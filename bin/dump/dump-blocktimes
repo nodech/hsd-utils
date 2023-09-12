@@ -6,7 +6,7 @@ const os = require('os');
 const fs = require('bfile');
 const cfg = require('../../lib/config');
 const node = require('../../lib/node');
-const common = require('../../lib/common');
+const paths = require('../../lib/paths');
 const {readJSON, writeJSON} = require('../../lib/util');
 
 function help() {
@@ -30,7 +30,7 @@ function help() {
   const dataRoot = config.str('data-dir', os.tmpdir());
   const force = config.bool('force', false);
   const showHelp = config.bool('help', false);
-  const file = common.blocktimesFile(dataRoot);
+  const file = paths.blocktimesFile(dataRoot);
 
   if (showHelp)
     help();

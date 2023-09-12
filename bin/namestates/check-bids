@@ -3,9 +3,9 @@
 'use strict';
 
 const os = require('os');
-const path = require('path');
 const fs = require('bfile');
 const common = require('../../lib/common');
+const paths = require('../../lib/paths');
 const cfg = require('../../lib/config');
 const node = require('../../lib/node');
 const {writeJSON, readJSON, spawn} = require('../../lib/util');
@@ -13,23 +13,25 @@ const {Network} = require('hsd');
 
 function help() {
   // eslint-disable-next-line max-len
-  const help = `Usage: ./bin/namestates/check-bids WALLET_ID STEP TIP_HEIGHT HOURS [OPTIONS]
+  const help = `Usage: ./bin/namestates/check-bids WALLET_ID STEP [OPTIONS]
 Dump bids that are lost or need reveal (within HOURS).
 
-  OPTIONS:
-    --all do from STEP to 4.
+OPTIONS:
+  --all do from STEP to 4.
+  --tip-height <number> - override tip height.
+  --hours <number>      - hours to filter (default 48).
+  --split <number>      - split request information (default 40).
 
-  HOURS - status specific, filter reveals which have less than HOURS left.
+HOURS - status specific, filter reveals which have less than HOURS left.
 
-  STEPS:
-    1, filter: filter bids utxos.
-    2, sort: sort lost and reveals.
+STEPS:
+  1, filter: filter bids utxos.
+  2, sort: sort lost and reveals.
 
-  Diff STEPS:
-    all: Do steps from 1 to 4. (exc 0)
-    status-reveal: get summary reveals.
-    status-lost: get summary of lost bids.
-  `;
+Diff STEPS:
+  status-reveal: get summary reveals.
+  status-lost: get summary of lost bids.
+`;
 
   console.error(help);
   process.exit(2);
@@ -44,20 +46,13 @@ Dump bids that are lost or need reveal (within HOURS).
     help();
 
   const dataRoot = config.str('data-dir', os.tmpdir());
-  const dataDir = path.join(dataRoot, `check-bids-${id}`);
-  const fileCoins = common.coinsDumpFile(dataRoot, id);
-  const fileLost = path.join(dataDir, '1-filter-lost-utxos.json');
-  const fileNeedsReveal = path.join(dataDir, '1-filter-needs-reveal.json');
-  const fileLostByHeight = path.join(dataDir, '2-lost-by-height.json');
-  const fileRevealByHrsLeft = path.join(dataDir, '2-reveal-by-hrs-left.json');
-  const fileRevealRequests = path.join(dataDir, 'status-requests.json');
-  const fileLostWithTime = path.join(dataDir, 'status-lost.json');
+  const files = paths.checkBidsByCoinsDirs(dataRoot, id);
 
-  await fs.mkdirp(dataDir);
+  await fs.mkdirp(files.dataDir);
 
   const network = Network.get(config.get('network', 'main'));
   const client = node.client();
-  let currentTipHeight = config.int(2, -1);
+  let currentTipHeight = config.uint('tip-height', -1);
 
   if (currentTipHeight === -1)
     currentTipHeight = (await client.getInfo()).chain.height;
@@ -68,16 +63,19 @@ Dump bids that are lost or need reveal (within HOURS).
   const step = config.str(1, 'all');
   let fallthrough = config.bool('all', false);
 
+  const hours = config.int('hours', 48);
+  const split = config.int('split', 40);
+
   switch (step) {
     case '0':
     case 'dump': {
-      console.log('Getting wallet names...');
+      console.log(`Getting wallet coins for ${id}...`);
 
       const env = cfg.configToENV(config);
 
       await Promise.all([
-        spawn(common.execs.dumpBlockTimes, null, { env }),
-        spawn(common.execs.dump, ['coins', id], { env })
+        spawn(paths.execs.dumpBlockTimes, null, { env }),
+        spawn(paths.execs.dump, ['coins', id], { env })
       ]);
 
       if (!fallthrough)
@@ -91,8 +89,9 @@ Dump bids that are lost or need reveal (within HOURS).
     case 'filter': {
       if (!await node.hasDumpPlugin(client))
         throw new Error('Can not filter w/o dump plugin.');
+
       console.log('Start filtering...');
-      const data = await readJSON(fileCoins, true);
+      const data = await readJSON(files.coins, true);
       console.log(`Current tip: ${currentTipHeight}.`);
       console.log(`Filtering BID utxos before ${bidStart}/${revealStart}...`);
 
@@ -108,7 +107,7 @@ Dump bids that are lost or need reveal (within HOURS).
           continue;
 
         const hash = coin.covenant.items[0];
-        const info = await node.getNameByHash(
+        const info = await node.getNameStateJSONByNameHash(
           client,
           hash,
           coin.height,
@@ -140,8 +139,8 @@ Dump bids that are lost or need reveal (within HOURS).
         }
       }
 
-      await writeJSON(fileLost, lost, true);
-      await writeJSON(fileNeedsReveal, needsReveal, true);
+      await writeJSON(files.filter.lost, lost, true);
+      await writeJSON(files.filter.needsReveal, needsReveal, true);
 
       if (!fallthrough)
         break;
@@ -150,8 +149,8 @@ Dump bids that are lost or need reveal (within HOURS).
     case '2':
     case 'sort': {
       console.log('Start sorting...');
-      const dataLost = await readJSON(fileLost, true);
-      const dataReveals = await readJSON(fileNeedsReveal, true);
+      const dataLost = await readJSON(files.filter.lost, true);
+      const dataReveals = await readJSON(files.filter.needsReveal, true);
       console.log('Sorting lost by height...');
 
       dataLost.sort((a, b) => {
@@ -164,9 +163,9 @@ Dump bids that are lost or need reveal (within HOURS).
       });
 
       console.log('Writing lost bids...');
-      await writeJSON(fileLostByHeight, dataLost, true);
+      await writeJSON(files.sort.lostByHeight, dataLost, true);
       console.log('Writing reveals...');
-      await writeJSON(fileRevealByHrsLeft, dataReveals, true);
+      await writeJSON(files.sort.revealByHrsLeft, dataReveals, true);
 
       if (!fallthrough)
         break;
@@ -176,9 +175,7 @@ Dump bids that are lost or need reveal (within HOURS).
       fallthrough = true;
 
     case 'status-reveal': {
-      const hours = config.int(3, 24);
-      const split = config.int('split', 10);
-      const reveals = await readJSON(fileRevealByHrsLeft, true);
+      const reveals = await readJSON(files.sort.revealByHrsLeft, true);
 
       const totalReveals = reveals.length;
 
@@ -200,24 +197,20 @@ Dump bids that are lost or need reveal (within HOURS).
       );
 
       const arr = [...names];
-      const splitarr = [];
+      const splitarr = common.splitArray(arr, split);
 
-      for (let i = 0; i < arr.length; i += split)
-        splitarr.push(arr.slice(i, i + split));
-
-      await writeJSON(fileRevealRequests, splitarr);
+      await writeJSON(files.status.revealRequests, splitarr);
 
       if (!fallthrough)
         break;
     }
 
     case 'status-lost': {
-      const timeByHeight = await readJSON(common.blocktimesFile(dataRoot));
-      const coins = await readJSON(fileLostByHeight, true);
+      const coins = await readJSON(files.sort.lostByHeight, true);
       let amount = 0;
 
       for (const coin of coins) {
-        coin.time = timeByHeight[coin.height];
+        coin.time = await common.getBlockTimeByHeight(dataRoot, coin.height);
         amount += coin.value;
       }
 
@@ -226,7 +219,7 @@ Dump bids that are lost or need reveal (within HOURS).
   Total lost amount: ${amount / 1e6} hns
   Total lost bids: ${coins.length}.`);
 
-      await writeJSON(fileLostWithTime, true);
+      await writeJSON(files.status.lostWithTime, true);
     }
   }
 })().catch((e) => {

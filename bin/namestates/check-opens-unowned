@@ -5,7 +5,7 @@
 const os = require('os');
 const path = require('path');
 const fs = require('bfile');
-const common = require('../../lib/common');
+const paths = require('../../lib/paths');
 const cfg = require('../../lib/config');
 const node = require('../../lib/node');
 const {writeJSON, readJSON, spawn} = require('../../lib/util');
@@ -28,7 +28,7 @@ function help() {
 
   const dataRoot = config.str('data-dir', os.tmpdir());
   const dataDir = path.join(dataRoot, `check-opens-unopen-${id}`);
-  const fileCoins = common.coinsDumpFile(dataRoot, id);
+  const fileCoins = paths.coinsDumpFile(dataRoot, id);
   const fileOpens = path.join(dataDir, '1-filter-opens.json');
   const fileUnowned = path.join(dataDir, '2-unowned-opens.json');
   const fileNames = path.join(dataDir, 'status-names.json');
@@ -55,7 +55,7 @@ function help() {
 
       const env = cfg.configToENV(config);
       await Promise.all([
-        spawn(common.execs.dump, ['coins', id], { env })
+        spawn(paths.execs.dump, ['coins', id], { env })
       ]);
 
       if (!fallthrough)

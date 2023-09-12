@@ -8,7 +8,7 @@ const blockstore = require('hsd/lib/blockstore');
 const {HDPublicKey} = hsd.hd;
 const {Address, Chain} = hsd;
 const cfg = require('../../lib/config');
-const common = require('../../lib/common');
+const paths = require('../../lib/paths');
 const {writeJSON} = require('../../lib/util');
 
 function help() {
@@ -41,7 +41,7 @@ function help() {
   const wid = config.str('wid', 'wallet');
   const network = config.str('network', 'main');
   const progress = config.uint('progress', 1e4);
-  const chainCoinsFile = common.chainCoinsDumpFile(dataRoot, wid);
+  const chainCoinsFile = paths.chainCoinsDumpFile(dataRoot, wid);
 
   const accountKey = HDPublicKey.fromBase58(xpub, network);
   const recvKey = accountKey.derive(0);

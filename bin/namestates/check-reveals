@@ -1,0 +1,259 @@
+#!/usr/bin/env node
+
+'use strict';
+
+const os = require('os');
+const assert = require('bsert');
+const fs = require('bfile');
+const common = require('../../lib/common');
+const paths = require('../../lib/paths');
+const cfg = require('../../lib/config');
+const node = require('../../lib/node');
+const util = require('../../lib/util');
+const {writeJSON, readJSON} = util;
+const {Network} = require('hsd');
+
+function help() {
+  /* eslint-disable max-len */
+  const help = `Usage: ./bin/namestates/check-reveals WALLET_ID STEP [OPTIONS]
+Dump UTXOs that are in REVEAL state. Separate stuck based on MONTH(s) since they are in the state.
+
+OPTIONS:
+  --all do from STEP to end.
+  --tip-height <number> - override tip height.
+  --months     <number> - Months since in reveal state (default 1).
+
+STEPS:
+  1, filter: filter reveal utxos.
+
+Diff STEPS:
+  all: Do steps from 1 to end. (exc 0)
+`;
+
+  /* eslint-enable max-len */
+  console.error(help);
+  process.exit(2);
+}
+
+(async () => {
+  const config = cfg.parse();
+
+  const id = config.str(0);
+
+  if (!id)
+    help();
+
+  const dataRoot = config.str('data-dir', os.tmpdir());
+  const files = paths.checkRevealsByCoinsDirs(dataRoot, id);
+
+  await fs.mkdirp(files.dataDir);
+
+  const network = Network.get(config.get('network', 'main'));
+  const client = node.client();
+
+  let currentTipHeight = config.uint('tip-height', -1);
+
+  if (currentTipHeight === -1)
+    currentTipHeight = (await client.getInfo()).chain.height;
+
+  const step = config.str(1, 'all');
+  let fallthrough = config.bool('all', false);
+
+  const split = config.int('split', 40);
+  const months = config.uint('months', 1);
+  const monthsDiff = months * 30 * 24 * 60 * 60;
+  const now = Math.floor(Date.now() / 1000);
+
+  switch (step) {
+    case '0':
+    case 'dump': {
+      console.log(`Getting wallet coins for ${id}...`);
+
+      const env = cfg.configToENV(config);
+
+      await Promise.all([
+        util.spawn(paths.execs.dumpBlockTimes, null, { env }),
+        util.spawn(paths.execs.dump, ['coins', id], { env })
+      ]);
+
+      if (!fallthrough)
+        break;
+    }
+
+    case 'all':
+      fallthrough = true;
+
+    case '1':
+    case 'filter': {
+      if (!await node.hasDumpPlugin(client))
+        throw new Error('Can not filter w/o dump plugin.');
+
+      console.log('Start filtering...');
+      const data = await readJSON(files.coins, true);
+      console.log(`Current tip: ${currentTipHeight}.`);
+
+      const expired = [];
+      const needsRedeem = [];
+      const needsRegister = [];
+      const stillRevealing = [];
+      const unknown = [];
+
+      for (const coin of data) {
+        if (coin.covenant.action !== 'REVEAL')
+          continue;
+
+        // mempool
+        if (coin.height === -1)
+          continue;
+
+        const hash = coin.covenant.items[0];
+        const info = await node.getNameStateByNameHash(
+          client,
+          hash,
+          coin.height,
+          currentTipHeight
+        );
+
+        if (!info || !info.name) {
+          console.log('Could not find: ', coin.hash, coin.index);
+          continue;
+        }
+
+        coin.ns = info.getJSON(currentTipHeight, network);
+        coin.name = info.name.toString('binary');
+        coin.time = await common.getBlockTimeByHeight(dataRoot, coin.height);
+
+        if (info.isExpired(currentTipHeight, network)) {
+          if (!isRevealTheWinner(coin)) {
+            needsRedeem.push(coin);
+            continue;
+          }
+
+          expired.push(coin);
+          continue;
+        }
+
+        if (info.isClosed(currentTipHeight, network)) {
+          if (!isRevealTheWinner(coin)) {
+            needsRedeem.push(coin);
+            continue;
+          }
+
+          needsRegister.push(coin);
+          continue;
+        }
+
+        if (info.isReveal(currentTipHeight, network)) {
+          stillRevealing.push(coin);
+          continue;
+        }
+
+        unknown.push(coin);
+      }
+
+      await writeJSON(files.filter.expired, expired, true);
+      await writeJSON(files.filter.needsRedeem, needsRedeem, true);
+      await writeJSON(files.filter.needsRegister, needsRegister, true);
+      await writeJSON(files.filter.stillRevealing, stillRevealing, true);
+      await writeJSON(files.filter.unknown, unknown, true);
+
+      if (!fallthrough)
+        break;
+    }
+
+    case 'status':
+      fallthrough = true;
+
+    case 'status-redeem': {
+      const needsRedeem = await readJSON(files.filter.needsRedeem, true);
+      const totalRedeems = needsRedeem.length;
+      let totalAmount = 0;
+      let oldRedeemCount = 0;
+      const oldRedeems = new Set();
+
+      for (const coin of needsRedeem) {
+        const closeHeight = getNSCloseHeight(coin, network);
+        const time = await common.getBlockTimeByHeight(dataRoot, closeHeight);
+
+        totalAmount += coin.value;
+
+        // block must be available
+        assert(time);
+
+        if (time + monthsDiff > now)
+          continue;
+
+        oldRedeemCount++;
+        oldRedeems.add(coin.ns.name);
+      }
+
+      console.log(`-- Redeem - ${id} --`);
+      console.log(`  Total redeem: ${totalRedeems}.`);
+      console.log(`  Total amount: ${util.amount(totalAmount)}.`);
+      console.log(`  Old redeem: ${oldRedeems.size} (${oldRedeemCount}).`);
+
+      const arr = [...oldRedeems];
+      const splitarr = util.splitArray(arr, split);
+      await writeJSON(files.status.oldRedeems, splitarr, true);
+
+      if (!fallthrough)
+        break;
+    }
+
+    case 'status-register': {
+      const needsRegister = await readJSON(files.filter.needsRegister, true);
+      const totalRegisters = needsRegister.length;
+      let totalAmount = 0;
+      let oldRegisterCount = 0;
+      const oldRegisters = new Set();
+
+      for (const coin of needsRegister) {
+        const closeHeight = getNSCloseHeight(coin, network);
+        const time = await common.getBlockTimeByHeight(dataRoot, closeHeight);
+
+        totalAmount += coin.value;
+
+        // block must be available
+        assert(time);
+
+        if (time + monthsDiff > now)
+          continue;
+
+        oldRegisterCount++;
+        oldRegisters.add(coin.ns.name);
+      }
+
+      console.log(`-- Register - ${id} --`);
+      console.log(`  Total register: ${totalRegisters}.`);
+      console.log(`  Total amount: ${util.amount(totalAmount)}.`);
+      console.log(`  Old register: ${oldRegisters.size}`
+                  + ` (${oldRegisterCount}).`);
+
+      const arr = [...oldRegisters];
+      const splitarr = util.splitArray(arr, split);
+      await writeJSON(files.status.oldRegisters, splitarr, true);
+    }
+  }
+})().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
+
+function isRevealTheWinner(coin) {
+  if (coin.hash === coin.ns.owner.hash && coin.index === coin.ns.owner.index)
+    return true;
+
+  return false;
+}
+
+function getNSCloseHeight(coin, network) {
+  const height = coin.ns.height;
+
+  const {
+    treeInterval,
+    biddingPeriod,
+    revealPeriod
+  } = network.names;
+
+  return height + treeInterval + biddingPeriod + revealPeriod;
+}

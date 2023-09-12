@@ -6,9 +6,10 @@ const assert = require('assert');
 const os = require('os');
 const path = require('path');
 const fs = require('bfile');
-const common = require('../../lib/common');
+const paths = require('../../lib/paths');
 const cfg = require('../../lib/config');
-const {writeJSON, readJSON, spawn} = require('../../lib/util');
+const util = require('../../lib/util');
+const {writeJSON, readJSON} = util;
 
 const SPENDABLES = new Set(['NONE', 'OPEN', 'REDEEM']);
 
@@ -254,7 +255,7 @@ class BalanceInfo {
 }
 
 function help() {
-  const help = `./bin/get-coin-info WALLET_ID [STEP] [OPTIONS]
+  const help = `./bin/coinstates/get-coin-info WALLET_ID [STEP] [OPTIONS]
   OPTIONS:
     --all - Do every step from STEP to the last.
     --from-chain-dump
@@ -284,10 +285,10 @@ function help() {
   const dataDir = path.join(dataRoot, `get-coin-info-${id}`);
   const format = config.bool('format', false);
 
-  let fileCoins = common.coinsDumpFile(dataRoot, id);
+  let fileCoins = paths.coinsDumpFile(dataRoot, id);
 
   if (fromChainDump)
-    fileCoins = common.chainCoinsDumpFile(dataRoot, id);
+    fileCoins = paths.chainCoinsDumpFile(dataRoot, id);
 
   const fileSummed = path.join(dataDir, '1-summary.json');
 
@@ -302,7 +303,8 @@ function help() {
     case 'dump': {
       if (fromChainDump) {
         throw new Error(
-          'Please execute ./bin/dump-coins-low before and/or skip step 0/dump.'
+          // eslint-disable-next-line max-len
+          'Please execute ./bin/dump/dump-coins-low before and/or skip step 0/dump.'
         );
       }
 
@@ -310,8 +312,8 @@ function help() {
       const env = cfg.configToENV(config);
 
       await Promise.all([
-        spawn(common.execs.dumpBlockTimes, null, { env }),
-        spawn(common.execs.dump, ['coins', id], { env })
+        util.spawn(paths.execs.dumpBlockTimes, null, { env }),
+        util.spawn(paths.execs.dump, ['coins', id], { env })
       ]);
 
       if (!fallthrough)
@@ -349,25 +351,19 @@ function help() {
   process.exit(1);
 });
 
-function formatNumber(number, locale) {
-  return number.toLocaleString(locale);
+function formatNumber(number) {
+  return number.toLocaleString();
 }
 
-function formatBalance(balance, locale) {
-  return (balance / 1e6).toLocaleString(locale, {
-    maximumFractionDigits: 6
-  }) + ' HNS';
-}
-
-function parseNums(obj, formatFn, locale) {
+function parseNums(obj, formatFn) {
   if (typeof obj === 'number')
-    return formatFn(obj, locale);
+    return formatFn(obj);
 
   assert(typeof obj === 'object', 'obj needs to be an object.');
 
   const copy = {};
   for (const key of Object.keys(obj))
-    copy[key] = parseNums(obj[key], formatFn, locale);
+    copy[key] = parseNums(obj[key], formatFn);
 
   return copy;
 }
@@ -375,14 +371,14 @@ function parseNums(obj, formatFn, locale) {
 function formatInfo(info, locale) {
   const balance = {
     coin: formatNumber(info.balance.coin, locale),
-    unconfirmed: formatBalance(info.balance.unconfirmed, locale),
-    confirmed: formatBalance(info.balance.confirmed, locale),
-    lockedUnconfirmed: formatBalance(info.balance.lockedUnconfirmed, locale),
-    lockedConfirmed: formatBalance(info.balance.lockedConfirmed, locale)
+    unconfirmed: util.amount(info.balance.unconfirmed, locale),
+    confirmed: util.amount(info.balance.confirmed, locale),
+    lockedUnconfirmed: util.amount(info.balance.lockedUnconfirmed, locale),
+    lockedConfirmed: util.amount(info.balance.lockedConfirmed, locale)
   };
 
   const coins = parseNums(info.coins, formatNumber, locale);
-  const balances = parseNums(info.balances, formatBalance, locale);
+  const balances = parseNums(info.balances, util.amount);
 
   return {
     balance,

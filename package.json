@@ -1,6 +1,6 @@
 {
-  "name": "wallet-utils",
-  "version": "0.0.0",
+  "name": "hsd-utils",
+  "version": "0.0.1",
   "description": "",
   "main": "lib/utils.js",
   "scripts": {
@@ -9,14 +9,39 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nodech/hsw-wallet-utils.git"
+    "url": "git+https://github.com/nodech/hsd-utils.git"
   },
   "author": "Nodari Chkuaselidze",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/nodech/hsw-wallet-utils/issues"
+    "url": "https://github.com/nodech/hsd-utils/issues"
   },
-  "homepage": "https://github.com/nodech/hsw-wallet-utils#readme",
+  "bin": {
+    "coinstates-get-coin-info": "./bin/coinstates/get-coin-info",
+    "dump-dump": "./bin/dump/dump",
+    "dump-dump-blocktimes": "./bin/dump/dump-blocktimes",
+    "dump-dump-coins-low": "./bin/dump/dump-coins-low",
+    "get-wallets": "./bin/get-wallets",
+    "monitor-check-status": "./bin/monitor/check-status",
+    "monitor-check-status-render": "./bin/monitor/check-status-render",
+    "namestates-chain-check-opens-unowned": "./bin/namestates/chain-check-opens-unowned",
+    "namestates-check-bids": "./bin/namestates/check-bids",
+    "namestates-check-crosses": "./bin/namestates/check-crosses",
+    "namestates-check-expires-by-namestate": "./bin/namestates/check-expires-by-namestate",
+    "namestates-check-opens-unowned": "./bin/namestates/check-opens-unowned",
+    "namestates-check-reveals": "./bin/namestates/check-reveals",
+    "namestates-check-reveals-by-namestate": "./bin/namestates/check-reveals-by-namestate",
+    "namestates-get-owned-names": "./bin/namestates/get-owned-names",
+    "wallet-management-check-gaps": "./bin/wallet-management/check-gaps",
+    "wallet-management-check-gaps-low": "./bin/wallet-management/check-gaps-low",
+    "wallet-management-derive-addr": "./bin/wallet-management/derive-addr",
+    "wallet-management-derive-wallet": "./bin/wallet-management/derive-wallet",
+    "wallet-management-dump-blinds-low": "./bin/wallet-management/dump-blinds-low",
+    "wallet-management-import-bids-blinddump": "./bin/wallet-management/import-bids-blinddump",
+    "wallet-management-import-bids-dump": "./bin/wallet-management/import-bids-dump",
+    "wallet-management-wallet-mgr": "./bin/wallet-management/wallet-mgr"
+  },
+  "homepage": "https://github.com/nodech/hsd-utils#readme",
   "dependencies": {
     "bcfg": "^0.2.2",
     "bcurl": "^0.2.1",
