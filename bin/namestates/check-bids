@@ -2,14 +2,11 @@
 
 'use strict';
 
-const os = require('os');
 const fs = require('bfile');
 const common = require('../../lib/common');
 const paths = require('../../lib/paths');
-const cfg = require('../../lib/config');
 const node = require('../../lib/node');
-const {writeJSON, readJSON, spawn} = require('../../lib/util');
-const {Network} = require('hsd');
+const {writeJSON, readJSON} = require('../../lib/util');
 
 function help() {
   // eslint-disable-next-line max-len
@@ -37,44 +34,30 @@ Diff STEPS:
 }
 
 (async () => {
-  const config = cfg.parse();
+  const {
+    config,
+    fthrough,
+    id,
+    network,
+    nodeClient,
+    root,
+    step,
+    tip
+  } = await common.setupChecker(help);
 
-  const id = config.str(0);
+  let fallthrough = fthrough;
 
-  if (!id)
-    help();
-
-  const dataRoot = config.str('data-dir', os.tmpdir());
-  const files = paths.checkBidsByCoinsDirs(dataRoot, id);
-
+  const files = paths.checkBidsByCoinsDirs(root, id);
   await fs.mkdirp(files.dataDir);
 
-  const network = Network.get(config.get('network', 'main'));
-  const client = node.client();
-  let currentTipHeight = config.uint('tip-height', -1);
-
-  if (currentTipHeight === -1)
-    currentTipHeight = (await client.getInfo()).chain.height;
-
-  const revealStart = currentTipHeight - network.names.revealPeriod;
+  const revealStart = tip - network.names.revealPeriod;
   const bidStart = revealStart - network.names.biddingPeriod;
-
-  const step = config.str(1, 'all');
-  let fallthrough = config.bool('all', false);
-
   const hours = config.int('hours', 48);
 
   switch (step) {
     case '0':
     case 'dump': {
-      console.log(`Getting wallet coins for ${id}...`);
-
-      const env = cfg.configToENV(config);
-
-      await Promise.all([
-        spawn(paths.execs.dumpBlockTimes, null, { env }),
-        spawn(paths.execs.dump, ['coins', id], { env })
-      ]);
+      await common.dumpCoins(config, id);
 
       if (!fallthrough)
         break;
@@ -85,18 +68,18 @@ Diff STEPS:
 
     case '1':
     case 'filter': {
-      if (!await node.hasDumpPlugin(client))
+      if (!await node.hasDumpPlugin(nodeClient))
         throw new Error('Can not filter w/o dump plugin.');
 
       console.log('Start filtering...');
-      const data = await readJSON(files.coins, true);
-      console.log(`Current tip: ${currentTipHeight}.`);
+      const coins = await readJSON(files.coins, true);
+      console.log(`Current tip: ${tip}.`);
       console.log(`Filtering BID utxos before ${bidStart}/${revealStart}...`);
 
       const needsReveal = [];
       const lost = [];
 
-      for (const coin of data) {
+      for (const coin of coins) {
         if (coin.covenant.action !== 'BID')
           continue;
 
@@ -105,33 +88,33 @@ Diff STEPS:
           continue;
 
         const hash = coin.covenant.items[0];
-        const info = await node.getNameStateJSONByNameHash(
-          client,
+        const ns = await node.getNameStateJSONByNameHash(
+          nodeClient,
           hash,
           coin.height,
-          currentTipHeight
+          tip
         );
 
         if (coin.height < bidStart) {
-          coin.name = info.name;
+          coin.name = ns.name;
           lost.push(coin);
           continue;
         }
 
-        if (!info || !info.name) {
+        if (!ns || !ns.name) {
           console.log('Could not find: ', coin.hash, coin.index);
           continue;
         }
 
-        coin.ns = info;
-        coin.name = info.name;
+        coin.ns = ns;
+        coin.name = ns.name;
 
-        if (info.state === 'CLOSED') {
+        if (ns.state === 'CLOSED') {
           lost.push(coin);
           continue;
         }
 
-        if (info.state === 'REVEAL') {
+        if (ns.state === 'REVEAL') {
           needsReveal.push(coin);
           continue;
         }
@@ -205,7 +188,7 @@ Diff STEPS:
       let amount = 0;
 
       for (const coin of coins) {
-        coin.time = await common.getBlockTimeByHeight(dataRoot, coin.height);
+        coin.time = await common.getBlockTimeByHeight(root, coin.height);
         amount += coin.value;
       }
 

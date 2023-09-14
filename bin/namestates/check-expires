@@ -1,0 +1,194 @@
+#!/usr/bin/env node
+
+'use strict';
+
+const fs = require('bfile');
+const common = require('../../lib/common');
+const paths = require('../../lib/paths');
+const node = require('../../lib/node');
+const util = require('../../lib/util');
+const {writeJSON, readJSON} = util;
+
+function help() {
+  // eslint-disable-next-line max-len
+  const help = `Usage: ./bin/namestates/check-expires WALLET_ID STEP [OPTIONS]
+Dump names that are expired or need renew (within DAYS).
+
+OPTIONS:
+  --all do from STEP to 4.
+  --tip-height <number> - override tip height. (default -1 - get from node)
+  --days <number>       - days to filter (default 30).
+
+HOURS - status specific, filter reveals which have less than HOURS left.
+
+STEPS:
+  1, filter: filter bids utxos.
+
+Diff STEPS:
+
+`;
+
+  console.error(help);
+  process.exit(2);
+}
+
+(async () => {
+  const {
+    config,
+    fthrough,
+    id,
+    network,
+    nodeClient,
+    root,
+    step,
+    tip
+  } = await common.setupChecker(help);
+
+  let fallthrough = fthrough;
+
+  const files = paths.checkExpiresByCoinsDirs(root, id);
+  await fs.mkdirp(files.dataDir);
+
+  const days = config.int('days', 30);
+  const futureHeight = tip + network.pow.blocksPerDay * days;
+  const logProgress = config.bool('log-progress', false);
+
+  switch (step) {
+    case '0':
+    case 'dump': {
+      await common.dumpCoins(config, id);
+
+      if (!fallthrough)
+        break;
+    }
+
+    case 'all':
+      fallthrough = true;
+
+    case '1':
+    case 'filter': {
+      if (!await node.hasDumpPlugin(nodeClient))
+        throw new Error('Can not filter w/o dump plugin.');
+
+      console.log('Start filtering...');
+      const coins = await readJSON(files.coins, true);
+      console.log(`Current tip: ${tip}.`);
+
+      const expired = [];
+      const expiring = [];
+
+      let processed = 0;
+      for (const coin of coins) {
+        processed++;
+
+        const prc = util.logPercent(processed, coins.length, 10_000);
+
+        if (logProgress && prc) {
+          console.log(
+            `Processed ${processed} coins of ${coins.length} (${prc}%)`);
+        }
+
+        if (!isCoinExpirable(coin))
+          continue;
+
+        const nameHash = coin.covenant.items[0];
+        const ns = await node.getNameStateByNameHash(
+          nodeClient,
+          nameHash,
+          coin.height,
+          tip
+        );
+
+        if (!ns || !ns.name) {
+          console.log('Could not find: ', coin.hash, coin.index);
+          continue;
+        }
+
+        coin.ns = ns.getJSON(tip, network);
+        coin.name = ns.name.toString('binary');
+
+        if (ns.isExpired(tip, network)) {
+          expired.push(coin);
+          continue;
+        }
+
+        if (ns.isExpired(futureHeight, network)) {
+          expiring.push(coin);
+          continue;
+        }
+      }
+
+      await writeJSON(files.filter.details, {
+        days,
+        tip
+      });
+
+      await writeJSON(files.filter.expired, expired, true);
+      await writeJSON(files.filter.expiring, expiring, true);
+
+      if (!fallthrough)
+        break;
+    }
+
+    case 'status': {
+      const details = await readJSON(files.filter.details);
+      const expiredNames = await readJSON(files.filter.expired, true);
+      const expiringCoins = await readJSON(files.filter.expiring, true);
+
+      console.log(`Check Tip: ${details.tip}`);
+      console.log(`Expired: ${expiredNames.length}`);
+      console.log(`Expiring in ${details.days} days: ${expiringCoins.length}`);
+
+      const transfer = [];
+      const reveal = [];
+      const normal = [];
+
+      for (const coin of expiringCoins) {
+        const name = coin.name;
+
+        if (coin.covenant.action === 'TRANSFER') {
+          transfer.push(name);
+          continue;
+        }
+
+        if (coin.covenant.action === 'REVEAL') {
+          reveal.push(name);
+          continue;
+        }
+
+        normal.push(name);
+      }
+
+      console.log(`  Transfer: ${transfer.length}`);
+      console.log(`  Reveal: ${reveal.length}`);
+      console.log(`  Normal: ${normal.length}`);
+
+      await writeJSON(files.status.renew, normal, true);
+      await writeJSON(files.status.transfer, transfer, true);
+      await writeJSON(files.status.reveal, reveal, true);
+    }
+  }
+})().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
+
+function isCoinExpirable(coin) {
+  const {action} = coin.covenant;
+
+  if (coin.height === -1)
+    return false;
+
+  switch (action) {
+    case 'CLAIM':
+    case 'REVEAL':
+    case 'REGISTER':
+    case 'UPDATE':
+    case 'RENEW':
+    case 'TRANSFER':
+    case 'FINALIZE':
+      return true;
+  }
+
+  return false;
+}

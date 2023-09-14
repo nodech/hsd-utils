@@ -54,7 +54,7 @@ function classify(from) {
 
 function help() {
   // eslint-disable-next-line max-len
-  const help = `Usage: ./bin/namestates/check-expires WALLET_ID STEP [DAYS] [OPTIONS]
+  const help = `Usage: ./bin/namestates/check-expires-by-namestate WALLET_ID STEP [DAYS] [OPTIONS]
 Dump expired, expiring (within DAYS) and in transfer names for wallet.
 
   OPTIONS:
@@ -83,7 +83,7 @@ Dump expired, expiring (within DAYS) and in transfer names for wallet.
     help();
 
   const dataRoot = config.str('data-dir', os.tmpdir());
-  const dataDir = path.join(dataRoot, `check-expires-${id}`);
+  const dataDir = path.join(dataRoot, `check-expiresnamestate-${id}`);
   const fileOwnNames = paths.namesDumpFile(dataRoot, id);
   const fileFiltered = path.join(dataDir, '1-filter-closed-names.json');
   const fileSortedExpires = path.join(dataDir, '2-sort-expires.json');

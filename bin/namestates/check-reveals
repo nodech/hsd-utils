@@ -2,16 +2,13 @@
 
 'use strict';
 
-const os = require('os');
 const assert = require('bsert');
 const fs = require('bfile');
 const common = require('../../lib/common');
 const paths = require('../../lib/paths');
-const cfg = require('../../lib/config');
 const node = require('../../lib/node');
 const util = require('../../lib/util');
 const {writeJSON, readJSON} = util;
-const {Network} = require('hsd');
 
 function help() {
   /* eslint-disable max-len */
@@ -28,6 +25,8 @@ STEPS:
 
 Diff STEPS:
   all: Do steps from 1 to end. (exc 0)
+  status-redeem: get summary for redeems.
+  status-register: get summary for registers.
 `;
 
   /* eslint-enable max-len */
@@ -36,28 +35,21 @@ Diff STEPS:
 }
 
 (async () => {
-  const config = cfg.parse();
+  const {
+    config,
+    fthrough,
+    id,
+    network,
+    nodeClient,
+    root,
+    step,
+    tip
+  } = await common.setupChecker(help);
 
-  const id = config.str(0);
+  let fallthrough = fthrough;
 
-  if (!id)
-    help();
-
-  const dataRoot = config.str('data-dir', os.tmpdir());
-  const files = paths.checkRevealsByCoinsDirs(dataRoot, id);
-
+  const files = paths.checkRevealsByCoinsDirs(root, id);
   await fs.mkdirp(files.dataDir);
-
-  const network = Network.get(config.get('network', 'main'));
-  const client = node.client();
-
-  let currentTipHeight = config.uint('tip-height', -1);
-
-  if (currentTipHeight === -1)
-    currentTipHeight = (await client.getInfo()).chain.height;
-
-  const step = config.str(1, 'all');
-  let fallthrough = config.bool('all', false);
 
   const months = config.uint('months', 1);
   const monthsDiff = months * 30 * 24 * 60 * 60;
@@ -66,14 +58,7 @@ Diff STEPS:
   switch (step) {
     case '0':
     case 'dump': {
-      console.log(`Getting wallet coins for ${id}...`);
-
-      const env = cfg.configToENV(config);
-
-      await Promise.all([
-        util.spawn(paths.execs.dumpBlockTimes, null, { env }),
-        util.spawn(paths.execs.dump, ['coins', id], { env })
-      ]);
+      await common.dumpCoins(config, id);
 
       if (!fallthrough)
         break;
@@ -84,12 +69,12 @@ Diff STEPS:
 
     case '1':
     case 'filter': {
-      if (!await node.hasDumpPlugin(client))
+      if (!await node.hasDumpPlugin(nodeClient))
         throw new Error('Can not filter w/o dump plugin.');
 
       console.log('Start filtering...');
       const data = await readJSON(files.coins, true);
-      console.log(`Current tip: ${currentTipHeight}.`);
+      console.log(`Current tip: ${tip}.`);
 
       const expired = [];
       const needsRedeem = [];
@@ -106,23 +91,23 @@ Diff STEPS:
           continue;
 
         const hash = coin.covenant.items[0];
-        const info = await node.getNameStateByNameHash(
-          client,
+        const ns = await node.getNameStateByNameHash(
+          nodeClient,
           hash,
           coin.height,
-          currentTipHeight
+          tip
         );
 
-        if (!info || !info.name) {
+        if (!ns || !ns.name) {
           console.log('Could not find: ', coin.hash, coin.index);
           continue;
         }
 
-        coin.ns = info.getJSON(currentTipHeight, network);
-        coin.name = info.name.toString('binary');
-        coin.time = await common.getBlockTimeByHeight(dataRoot, coin.height);
+        coin.ns = ns.getJSON(tip, network);
+        coin.name = ns.name.toString('binary');
+        coin.time = await common.getBlockTimeByHeight(root, coin.height);
 
-        if (info.isExpired(currentTipHeight, network)) {
+        if (ns.isExpired(tip, network)) {
           if (!isRevealTheWinner(coin)) {
             needsRedeem.push(coin);
             continue;
@@ -132,7 +117,7 @@ Diff STEPS:
           continue;
         }
 
-        if (info.isClosed(currentTipHeight, network)) {
+        if (ns.isClosed(tip, network)) {
           if (!isRevealTheWinner(coin)) {
             needsRedeem.push(coin);
             continue;
@@ -142,7 +127,7 @@ Diff STEPS:
           continue;
         }
 
-        if (info.isReveal(currentTipHeight, network)) {
+        if (ns.isReveal(tip, network)) {
           stillRevealing.push(coin);
           continue;
         }
@@ -173,7 +158,7 @@ Diff STEPS:
 
       for (const coin of needsRedeem) {
         const closeHeight = getNSCloseHeight(coin, network);
-        const time = await common.getBlockTimeByHeight(dataRoot, closeHeight);
+        const time = await common.getBlockTimeByHeight(root, closeHeight);
 
         totalAmount += coin.value;
 
@@ -210,7 +195,7 @@ Diff STEPS:
 
       for (const coin of needsRegister) {
         const closeHeight = getNSCloseHeight(coin, network);
-        const time = await common.getBlockTimeByHeight(dataRoot, closeHeight);
+        const time = await common.getBlockTimeByHeight(root, closeHeight);
 
         totalAmount += coin.value;
 
