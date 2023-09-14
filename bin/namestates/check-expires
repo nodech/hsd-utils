@@ -84,7 +84,7 @@ Diff STEPS:
         const prc = util.logPercent(processed, coins.length, 1e5);
 
         if (logProgress && prc) {
-          console.log(
+          console.error(
             `${id}: ${processed}/${coins.length} coins (${prc}%)`);
         }
 
