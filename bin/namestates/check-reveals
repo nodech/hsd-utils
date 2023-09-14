@@ -59,7 +59,6 @@ Diff STEPS:
   const step = config.str(1, 'all');
   let fallthrough = config.bool('all', false);
 
-  const split = config.int('split', 40);
   const months = config.uint('months', 1);
   const monthsDiff = months * 30 * 24 * 60 * 60;
   const now = Math.floor(Date.now() / 1000);
@@ -168,8 +167,9 @@ Diff STEPS:
       const needsRedeem = await readJSON(files.filter.needsRedeem, true);
       const totalRedeems = needsRedeem.length;
       let totalAmount = 0;
-      let oldRedeemCount = 0;
-      const oldRedeems = new Set();
+      let agedRedeemCount = 0;
+      let agedAmount = 0;
+      const agedRedeems = new Set();
 
       for (const coin of needsRedeem) {
         const closeHeight = getNSCloseHeight(coin, network);
@@ -183,18 +183,18 @@ Diff STEPS:
         if (time + monthsDiff > now)
           continue;
 
-        oldRedeemCount++;
-        oldRedeems.add(coin.ns.name);
+        agedAmount += coin.value;
+        agedRedeemCount++;
+        agedRedeems.add(coin.ns.name);
       }
 
-      console.log(`-- Redeem - ${id} --`);
+      console.log(`Redeem - ${id}`);
       console.log(`  Total redeem: ${totalRedeems}.`);
       console.log(`  Total amount: ${util.amount(totalAmount)}.`);
-      console.log(`  Old redeem: ${oldRedeems.size} (${oldRedeemCount}).`);
+      console.log(`  Aged redeem: ${agedRedeems.size} (${agedRedeemCount}).`);
+      console.log(`  Aged amount: ${util.amount(agedAmount)}.`);
 
-      const arr = [...oldRedeems];
-      const splitarr = util.splitArray(arr, split);
-      await writeJSON(files.status.oldRedeems, splitarr, true);
+      await writeJSON(files.status.agedRedeems, [...agedRedeems], true);
 
       if (!fallthrough)
         break;
@@ -204,8 +204,9 @@ Diff STEPS:
       const needsRegister = await readJSON(files.filter.needsRegister, true);
       const totalRegisters = needsRegister.length;
       let totalAmount = 0;
-      let oldRegisterCount = 0;
-      const oldRegisters = new Set();
+      let agedRegisterCount = 0;
+      let agedAmount = 0;
+      const agedRegisters = new Set();
 
       for (const coin of needsRegister) {
         const closeHeight = getNSCloseHeight(coin, network);
@@ -219,19 +220,19 @@ Diff STEPS:
         if (time + monthsDiff > now)
           continue;
 
-        oldRegisterCount++;
-        oldRegisters.add(coin.ns.name);
+        agedAmount++;
+        agedRegisterCount++;
+        agedRegisters.add(coin.ns.name);
       }
 
-      console.log(`-- Register - ${id} --`);
+      console.log(`Register - ${id}`);
       console.log(`  Total register: ${totalRegisters}.`);
       console.log(`  Total amount: ${util.amount(totalAmount)}.`);
-      console.log(`  Old register: ${oldRegisters.size}`
-                  + ` (${oldRegisterCount}).`);
+      console.log(`  Aged registers: ${agedRegisters.size}`
+                  + ` (${agedRegisterCount}).`);
+      console.log(`  Aged amount: ${util.amount(agedAmount)}.`);
 
-      const arr = [...oldRegisters];
-      const splitarr = util.splitArray(arr, split);
-      await writeJSON(files.status.oldRegisters, splitarr, true);
+      await writeJSON(files.status.agedRegisters, [...agedRegisters], true);
     }
   }
 })().catch((e) => {

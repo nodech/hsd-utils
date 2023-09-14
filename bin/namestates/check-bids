@@ -20,7 +20,6 @@ OPTIONS:
   --all do from STEP to 4.
   --tip-height <number> - override tip height.
   --hours <number>      - hours to filter (default 48).
-  --split <number>      - split request information (default 40).
 
 HOURS - status specific, filter reveals which have less than HOURS left.
 
@@ -64,7 +63,6 @@ Diff STEPS:
   let fallthrough = config.bool('all', false);
 
   const hours = config.int('hours', 48);
-  const split = config.int('split', 40);
 
   switch (step) {
     case '0':
@@ -196,10 +194,7 @@ Diff STEPS:
   Bids that need reveal before ${hours} hours: ${names.size}.`
       );
 
-      const arr = [...names];
-      const splitarr = common.splitArray(arr, split);
-
-      await writeJSON(files.status.revealRequests, splitarr);
+      await writeJSON(files.status.revealRequests, [...names]);
 
       if (!fallthrough)
         break;
