@@ -3,6 +3,7 @@
 'use strict';
 
 const fs = require('bfile');
+const NameState = require('hsd/lib/covenants/namestate');
 const common = require('../../lib/common');
 const paths = require('../../lib/paths');
 const node = require('../../lib/node');
@@ -74,8 +75,7 @@ Diff STEPS:
       const coins = await readJSON(files.coins, true);
       console.log(`Current tip: ${tip}.`);
 
-      const expired = [];
-      const expiring = [];
+      const expirable = [];
 
       let processed = 0;
       for (const coin of coins) {
@@ -107,6 +107,27 @@ Diff STEPS:
         coin.ns = ns.getJSON(tip, network);
         coin.name = ns.name.toString('binary');
 
+        expirable.push(coin);
+      }
+
+      await writeJSON(files.filter.expirable, expirable, true);
+
+      if (!fallthrough)
+        break;
+    }
+
+    case '2':
+    case 'sort': {
+      const expirable = await readJSON(files.filter.expirable, true);
+
+      const expiring = [];
+      const expired = [];
+
+      console.log(`Height: ${tip}, future: ${futureHeight}.`);
+
+      for (const coin of expirable) {
+        const ns = NameState.fromJSON(coin.ns);
+
         if (ns.isExpired(tip, network)) {
           expired.push(coin);
           continue;
@@ -118,22 +139,20 @@ Diff STEPS:
         }
       }
 
-      await writeJSON(files.filter.details, {
-        days,
-        tip
+      await writeJSON(files.sort.details, {
+        tip: tip,
+        days: days
       });
-
-      await writeJSON(files.filter.expired, expired, true);
-      await writeJSON(files.filter.expiring, expiring, true);
+      await writeJSON(files.sort.expired, expired, true);
+      await writeJSON(files.sort.expiring, expiring, true);
 
       if (!fallthrough)
         break;
     }
-
     case 'status': {
-      const details = await readJSON(files.filter.details);
-      const expiredNames = await readJSON(files.filter.expired, true);
-      const expiringCoins = await readJSON(files.filter.expiring, true);
+      const details = await readJSON(files.sort.details);
+      const expiredNames = await readJSON(files.sort.expired, true);
+      const expiringCoins = await readJSON(files.sort.expiring, true);
 
       console.log(`wallet: ${id}`);
       console.log(`Check Tip: ${details.tip}`);
