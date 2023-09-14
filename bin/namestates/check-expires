@@ -81,11 +81,11 @@ Diff STEPS:
       for (const coin of coins) {
         processed++;
 
-        const prc = util.logPercent(processed, coins.length, 10_000);
+        const prc = util.logPercent(processed, coins.length, 1e5);
 
         if (logProgress && prc) {
           console.log(
-            `Processed ${processed} coins of ${coins.length} (${prc}%)`);
+            `${id}: ${processed}/${coins.length} coins (${prc}%)`);
         }
 
         if (!isCoinExpirable(coin))
@@ -135,6 +135,7 @@ Diff STEPS:
       const expiredNames = await readJSON(files.filter.expired, true);
       const expiringCoins = await readJSON(files.filter.expiring, true);
 
+      console.log(`wallet: ${id}`);
       console.log(`Check Tip: ${details.tip}`);
       console.log(`Expired: ${expiredNames.length}`);
       console.log(`Expiring in ${details.days} days: ${expiringCoins.length}`);

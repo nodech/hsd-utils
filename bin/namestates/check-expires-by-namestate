@@ -203,40 +203,26 @@ Dump expired, expiring (within DAYS) and in transfer names for wallet.
     }
 
     case 'status-renew': {
-      const split = config.int('split', 40);
       const needsRenew = await readJSON(fileNeedsRenew, false);
       const names = new Set();
 
       for (const info of needsRenew.data)
         names.add(info.name);
 
-      const arr = [...names];
-      const splitarr = [];
-
-      for (let i = 0; i < needsRenew.data.length; i += split)
-        splitarr.push(arr.slice(i, i + split));
-
-      await writeJSON(fileRenewRequests, splitarr);
+      await writeJSON(fileRenewRequests, [...names]);
 
       if (!fallthrough)
         break;
     }
 
     case 'status-cancel': {
-      const split = config.int('split', 40);
       const inTransfer = await readJSON(fileInTransfer, false);
       const names = new Set();
 
       for (const info of inTransfer.data)
         names.add(info.name);
 
-      const arr = [...names];
-      const splitarr = [];
-
-      for (let i = 0; i < inTransfer.data.length; i += split)
-        splitarr.push(arr.slice(i, i + split));
-
-      await writeJSON(fileCancelRequests, splitarr);
+      await writeJSON(fileCancelRequests, [...names]);
     }
   }
 })().catch((e) => {
