@@ -10,8 +10,35 @@ const paths = require('../../lib/paths');
 const cfg = require('../../lib/config');
 const {writeJSON, readJSON, spawn} = require('../../lib/util');
 
+const CLAIM_END = 210240;
+
 function filterClosed(from) {
-  return from.filter(d => d.state === 'CLOSED');
+  const closedNames = [];
+
+  for (const name of from) {
+    if (name.state !== 'CLOSED')
+      continue;
+
+    if (name.claimed) {
+      const start = name.stats.renewalPeriodStart;
+      const end = name.stats.renewalPeriodEnd;
+      const tip = end - name.stats.blocksUntilExpire;
+
+      const expireBlock = Math.max(end, CLAIM_END);
+      const leftDays = (expireBlock - tip) / 144;
+
+      name.stats = {
+        renewalPeriodStart: start,
+        renewalPeriodEnd: end,
+        blocksUntilExpire: expireBlock - tip,
+        daysUntilExpire: leftDays
+      };
+    }
+
+    closedNames.push(name);
+  }
+
+  return closedNames;
 }
 
 function sortExpires(from) {
