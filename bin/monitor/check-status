@@ -57,7 +57,8 @@ function help() {
     disk: {
       disk: await getSystemInfo(hsdPath),
       pm2logs: await getPM2Logs(),
-      hsd: await getChainSizes(hsdPath)
+      hsd: await getChainSizes(hsdPath),
+      manifests: await getManifestSizes(hsdPath)
     },
     node: null,
     wallet: null,
@@ -108,7 +109,7 @@ function logMemory(mem) {
   free: ${sizeUnits(mem.available)} / ${sizeUnits(mem.total)} (${pc(mem.available, mem.total)})`);
 }
 
-function logDisk({ disk, pm2logs, hsd }) {
+function logDisk({ disk, pm2logs, hsd, manifests }) {
   console.log(`Disk
   used: ${sizeUnits(disk.used)} / ${sizeUnits(disk.total)} (${pc(disk.used, disk.total)})
   free: ${sizeUnits(disk.available)} / ${sizeUnits(disk.total)} (${pc(disk.available, disk.total)})
@@ -122,6 +123,10 @@ function logDisk({ disk, pm2logs, hsd }) {
     Wallet: ${sizeUnits(hsd.wallet)} (${pc(hsd.wallet, hsd.total)})
     Logs: ${sizeUnits(hsd.logs)} (${pc(hsd.logs, hsd.total)})
     Unaccounted: ${sizeUnits(hsd.extra)} (${pc(hsd.extra, hsd.total)})
+  MANIFESTS:
+    Blocks: ${sizeUnits(manifests.blocks)}
+    Chain: ${sizeUnits(manifests.chain)}
+    Wallet: ${sizeUnits(manifests.wallet)}
   `);
 }
 
@@ -256,6 +261,47 @@ async function getChainSizes(hsdPath) {
     logs,
     total,
     extra
+  };
+}
+
+async function getManifestFileSizes(dbPath) {
+  const dir = await fs.readdir(dbPath);
+  const regex = /^MANIFEST-\d+$/;
+
+  const manifests = dir.filter(f => regex.test(f));
+  const sizes = [];
+
+  for (const manifest of manifests) {
+    const manifestPath = path.join(dbPath, manifest);
+    const size = await du(manifestPath);
+    sizes.push(size);
+  }
+
+  return sizes;
+}
+
+async function getManifestSizes(hsdPath) {
+  const blocksLDB = path.join(hsdPath, 'blocks', 'index');
+  const chainLDB = path.join(hsdPath, 'chain');
+  const walletLDB = path.join(hsdPath, 'wallet');
+
+  let blocks = 0;
+  let chain = 0;
+  let wallet = 0;
+
+  assert(await fs.exists(chainLDB), `"${chainLDB}" does not exist.`);
+  assert(await fs.exists(walletLDB), `"${walletLDB}" does not exist.`);
+
+  if (await fs.exists(blocksLDB))
+    blocks = (await getManifestFileSizes(blocksLDB)).reduce((p, c) => p + c, 0);
+
+  chain = (await getManifestFileSizes(chainLDB)).reduce((p, c) => p + c, 0);
+  wallet = (await getManifestFileSizes(walletLDB)).reduce((p, c) => p + c, 0);
+
+  return {
+    blocks,
+    chain,
+    wallet
   };
 }
 

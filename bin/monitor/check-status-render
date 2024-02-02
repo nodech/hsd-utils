@@ -73,6 +73,27 @@ let WIDTH = 60;
     mempool('memp: ', node.info.mempool);
   }
 
+  if (disk.manifests) {
+    console.log('--- Manifests ---');
+    const headers = [
+      { text: 'chain', pc: 33 },
+      { text: 'wallet', pc: 33 },
+      { text: 'blocks', pc: 33 }
+    ];
+
+    const {chain, wallet, blocks} = disk.manifests;
+
+    widgets.table({
+      width: WIDTH,
+      headers,
+      rows: [{
+        chain: formatManifestSize(chain),
+        wallet: formatManifestSize(wallet),
+        blocks: formatManifestSize(blocks)
+      }]
+    });
+  }
+
   if (node && wallet) {
     console.log('--- Wallet ---');
     syncBar({
@@ -312,6 +333,9 @@ function httpStats(http, limit) {
   const duration = http.duration;
   const requestEntries = http.requests;
 
+  if (!http.requests)
+    return;
+
   console.log(`Last HTTP requests (${requestEntries.length})(${timeUnits(duration)}):`);
 
   const countByEndpoint = new Map();
@@ -482,4 +506,14 @@ function collectOut() {
       return written.join('');
     }
   };
+}
+
+function formatManifestSize(size) {
+  if (size > 1024 * 512)
+    return color.redText(sizeUnits(size));
+
+  if (size > 1024 * 128)
+    return color.yellowText(sizeUnits(size));
+
+  return color.greenText(sizeUnits(size));
 }
