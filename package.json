@@ -51,5 +51,8 @@
     "bval": "^0.1.8",
     "hs-client": "^7.0.0",
     "hsd": "^7.0.1"
+  },
+  "devDependencies": {
+    "bslintrc": "^0.0.3"
   }
 }
