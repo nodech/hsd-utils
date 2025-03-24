@@ -1,0 +1,433 @@
+#!/usr/bin/env node
+
+'use strict';
+
+const assert = require('bsert');
+const common = require('../../lib/common');
+const wallet = require('../../lib/wallet');
+const Amount = require('hsd/lib/ui/amount');
+
+const BLOCK_THRESHOLD = 1e6;
+
+function help() {
+  // eslint-disable-next-line max-len
+  const help = `Usage: ./bin/tx/fee-stats WALLET_ID [ACCOUNT] [OPTIONS]
+
+OPTIONS:
+  --network <network>      - use a different network.
+  --before <number>        - block height or timestamp. (< 1m)
+  --bucket-blocks <number> - blocks to bucket. (144) (exclusive with --bucket-time)
+  --bucket-time <number>   - time in seconds to bucket. (exclusive with --bucket-blocks)
+  --bucket-count <number>  - number of buckets. (10)
+  --remove-change          - remove change outputs.
+  --json                   - output json.
+  --csv                    - output csv.
+
+HTTP OPTIONS:
+  ...
+
+  --help                   - output this help.
+`;
+
+  console.error(help);
+  process.exit(2);
+}
+
+(async () => {
+  const {
+    id,
+    config,
+    network
+  } = await common.setupConfigs(help);
+
+  const account = config.str(1, 'default');
+  const walletClient = wallet.client();
+
+  const before = config.uint('before', Date.now() / 1000 | 0);
+  let bucketBlocks = config.uint('bucket-blocks', 0);
+  const bucketTime = config.uint('bucket-time', 0);
+  const bucketCount = config.uint('bucket-count', 10);
+  const removeChange = config.bool('remove-change', false);
+
+  const outputJSON = config.bool('json', false);
+  const outputCSV = config.bool('csv', false);
+
+  if (bucketBlocks && bucketTime) {
+    help();
+    process.exit(2);
+  }
+
+  if (!bucketBlocks && !bucketTime) {
+    bucketBlocks = 144;
+  }
+
+  let buckets = [];
+
+  if (bucketBlocks !== 0) {
+    let beforeBlock = before;
+
+    if (before > BLOCK_THRESHOLD) {
+      const txs = await walletClient.getHistory(id, {
+        account,
+        limit: 1,
+        time: before,
+        reverse: true
+      });
+
+      assert(txs.length, 1);
+
+      const tx = txs[0];
+      assert(tx.height);
+      beforeBlock = tx.height;
+
+    }
+
+    buckets = await collectByBlocks(walletClient, {
+      id,
+      bucketCount,
+      bucketBlocks,
+      beforeBlock,
+      removeChange
+    });
+  }
+
+  if (bucketTime !== 0) {
+    buckets = await collectByTime(walletClient, {
+      id,
+      bucketCount,
+      bucketTime,
+      removeChange,
+      beforeTime: before
+    });
+  }
+
+  if (outputJSON) {
+    printJSON(buckets);
+  } else if (outputCSV) {
+    printCSV(buckets);
+  } else {
+    printTable(buckets);
+  }
+})().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
+
+/**
+ * @param {ReturnType<wallet.client>} walletClient
+ * @param {Object} options
+ * @param {String} options.id
+ * @param {Number} options.bucketCount
+ * @param {Number} options.bucketTime
+ * @param {Number} options.beforeBlock
+ * @param {Boolean} options.removeChange
+ * @returns {Promise<Bucket[]>}
+ */
+
+async function collectByBlocks(walletClient, options) {
+  const buckets = [];
+  const tipHeight = options.beforeBlock;
+  const stepSize = options.bucketBlocks;
+  const until = tipHeight - (options.bucketCount * stepSize);
+
+  for (let height = tipHeight; height >= until && height > 0; height -= stepSize) {
+    const bucket = new Bucket('block', height, height - stepSize + 1);
+
+    for (let i = 0; i <= options.bucketBlocks; i++) {
+      const currentHeight = height - i;
+
+      if (currentHeight == 0)
+        break;
+
+      const block = await walletClient.getBlock(options.id, currentHeight);
+
+      if (!block)
+        continue;
+
+      for (const hash of block.hashes) {
+        const tx = await walletClient.getTX(options.id, hash);
+        bucket.addTX(tx, options.removeChange);
+      }
+    }
+
+    buckets.push(bucket);
+  }
+
+  return buckets;
+}
+
+/**
+ * @param {ReturnType<wallet.client>} walletClient
+ * @param {Object} options
+ * @param {String} options.id
+ * @param {Number} options.bucketCount
+ * @param {Number} options.bucketTime
+ * @param {Number} options.beforeTime
+ * @param {Boolean} options.removeChange
+ * @returns {Promise<Bucket[]>}
+ */
+
+async function collectByTime(walletClient, options) {
+  const buckets = new Map();
+  const baseDiff = options.beforeTime % options.bucketTime;
+  const until = options.beforeTime - (options.bucketCount * options.bucketTime);
+
+  const txs = getTransactions(walletClient, options.id, options.beforeTime);
+
+  for await (const tx of txs) {
+    if (tx.time < until)
+      break;
+
+    const time = tx.time - (tx.time % options.bucketTime) + baseDiff;
+    const bucketID = time;
+
+    if (!buckets.has(bucketID)) {
+      buckets.set(bucketID, new Bucket('time', time - options.bucketTime, time));
+    }
+
+    buckets.get(bucketID).addTX(tx, options.removeChange);
+  }
+
+  return Array.from(buckets.values());
+}
+
+class Bucket {
+  /**
+   * @param {String} type
+   * @param {Number} from
+   * @param {Number} to
+   */
+
+  constructor(type, from, to) {
+    this.type = type;
+    this.from = from;
+    this.to = to;
+    this.count = 0;
+    this.totalFee = 0;
+    this.feeByCovenant = new Map();
+  }
+
+  addTX(tx, removeChange = false) {
+    if (!isTXOurs(tx))
+      return;
+
+    this.count += 1;
+    this.totalFee += tx.fee;
+
+    const countCovenants = new Map();
+    let total = tx.outputs.length;
+
+    for (const output of tx.outputs) {
+      countCovenants.set(output.covenant.action, countCovenants.get(output.covenant.action) + 1 || 1);
+    }
+
+    if (removeChange) {
+      const nones = countCovenants.get('NONE');
+
+      if (nones > 1) {
+        total -= 1;
+        countCovenants.set('NONE', nones - 1);
+      } else if (nones == 1) {
+        total -= 1;
+        countCovenants.delete('NONE');
+      }
+    }
+
+    for (const [covenant, count] of countCovenants) {
+      const fee = tx.fee / total * count;
+      this.feeByCovenant.set(covenant, this.feeByCovenant.get(covenant) + fee || fee);
+    }
+  }
+
+  reset() {
+    this.totalFee = 0;
+    this.feeByCovenant.clear();
+  }
+}
+
+function isTXOurs(tx) {
+  for (const input of tx.inputs) {
+    if (input.path)
+      return true;
+  }
+
+  return false;
+}
+
+/**
+ * @param {ReturnType<wallet.client>} walletClient
+ * @param {String} id
+ * @param {Number} before
+ */
+
+async function* getTransactions(walletClient, id, before) {
+  let txs = await walletClient.getHistory(id, {
+    time: before,
+    reverse: true
+  });
+
+  while (txs && txs.length) {
+    for (const tx of txs) {
+      yield tx;
+    }
+
+    txs = await walletClient.getHistory(id, {
+      after: txs[txs.length - 1].hash,
+      reverse: true,
+    });
+  }
+}
+
+const ALL_COVENANTS = [
+ 'NONE',
+ 'CLAIM',
+ 'OPEN',
+ 'BID',
+ 'REVEAL',
+ 'REDEEM',
+ 'REGISTER',
+ 'UPDATE',
+ 'RENEW',
+ 'TRANSFER',
+ 'FINALIZE',
+ 'REVOKE'
+];
+
+/**
+ * @param {Bucket[]} buckets
+ */
+
+function printTable(buckets) {
+  // Convert buckets to table-friendly format
+  const tableData = buckets.map(bucket => {
+    // Start with basic properties
+    const row = {
+      'Type': bucket.type,
+      'From': bucket.from,
+      'To': bucket.to,
+      'Count': bucket.count,
+      'Total Fee': formatHNS(bucket.totalFee, { symbol: true })
+    };
+    
+    // Add fee for each covenant type
+    for (const covenant of ALL_COVENANTS) {
+      const fee = bucket.feeByCovenant.get(covenant) || 0;
+      row[covenant] = formatHNS(fee, { symbol: true });
+    }
+    
+    return row;
+  });
+  
+  // Use console.table to print the formatted table
+  console.table(tableData);
+}
+
+/**
+ * @param {Bucket[]} buckets
+ */
+
+function printJSON(buckets) {
+  const objects = buckets.map((bucket) => {
+    const obj = {
+      type: bucket.type,
+      from: bucket.from,
+      to: bucket.to,
+      count: bucket.count,
+      totalFee: bucket.totalFee,
+    };
+
+    for (const covenant of ALL_COVENANTS) {
+      obj[covenant] = bucket.feeByCovenant.get(covenant) || 0;
+    }
+
+    return obj;
+  });
+
+  console.log(JSON.stringify(objects, null, 2));
+}
+
+/**
+ * @param {Bucket[]} buckets
+ */
+
+/**
+ * @param {Bucket[]} buckets
+ * @param {Object} options - CSV export options
+ * @param {Boolean} [options.header=true] - Whether to include header row
+ * @param {String} [options.delimiter=','] - CSV delimiter
+ * @param {Boolean} [options.rawValues=false] - If true, export raw numeric values instead of formatted strings
+ * @returns {String} CSV string representation of the buckets
+ */
+
+function printCSV(buckets, options = {}) {
+  const {
+    header = true,
+    delimiter = ',',
+    rawValues = false
+  } = options;
+  
+  // Define the columns for the CSV
+  const columns = [
+    'Type', 'From', 'To', 'Count', 'TotalFee', 
+    ...ALL_COVENANTS
+  ];
+  
+  // Start with the header if requested
+  const lines = [];
+  if (header) {
+    lines.push(columns.join(delimiter));
+  }
+  
+  // Add data for each bucket
+  for (const bucket of buckets) {
+    const row = [
+      bucket.type,
+      bucket.from,
+      bucket.to,
+      bucket.count,
+      rawValues ? bucket.totalFee : formatHNS(bucket.totalFee).replace(' HNS', '')
+    ];
+    
+    // Add fee for each covenant type
+    for (const covenant of ALL_COVENANTS) {
+      const fee = bucket.feeByCovenant.get(covenant) || 0;
+      row.push(rawValues ? fee : formatHNS(fee).replace(' HNS', ''));
+    }
+    
+    lines.push(row.join(delimiter));
+  }
+  
+  // Join all lines with newlines
+  const csvString = lines.join('\n');
+  console.log(csvString);
+  return csvString;
+}
+
+/**
+ * @param {Number} value - The amount in base units (doos)
+ * @param {Object} options - Formatting options
+ * @param {String} [options.locale='en-US'] - Locale for formatting
+ * @param {Boolean} [options.symbol=false] - Whether to include the unit symbol
+ * @param {Boolean} [options.grouping=true] - Whether to use thousand separators
+ * @returns {String} Formatted amount
+ */
+function formatHNS(value, options = {}) {
+  const { 
+    locale = 'en-US',
+    symbol = false,
+    grouping = true
+  } = options;
+
+  const formatter = new Intl.NumberFormat(locale, {
+    useGrouping: grouping,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 6
+  });
+  
+  // Format the number and add the unit symbol if requested
+  const formattedNumber = formatter.format(
+    value / Math.pow(10, 6)
+  );
+
+  return formattedNumber + (symbol ? ' HNS' : '');
+}
