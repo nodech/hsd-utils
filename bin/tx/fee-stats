@@ -11,7 +11,7 @@ const BLOCK_THRESHOLD = 1e6;
 
 function help() {
   // eslint-disable-next-line max-len
-  const help = `Usage: ./bin/tx/fee-stats WALLET_ID [ACCOUNT] [OPTIONS]
+  const help = `Usage: ./bin/tx/fee-stats WALLET_ID [OPTIONS]
 
 OPTIONS:
   --network <network>      - use a different network.
@@ -40,7 +40,6 @@ HTTP OPTIONS:
     network
   } = await common.setupConfigs(help);
 
-  const account = config.str(1, 'default');
   const walletClient = wallet.client();
 
   const before = config.uint('before', Date.now() / 1000 | 0);
@@ -68,7 +67,6 @@ HTTP OPTIONS:
 
     if (before > BLOCK_THRESHOLD) {
       const txs = await walletClient.getHistory(id, {
-        account,
         limit: 1,
         time: before,
         reverse: true
@@ -131,7 +129,7 @@ async function collectByBlocks(walletClient, options) {
   const until = tipHeight - (options.bucketCount * stepSize);
 
   for (let height = tipHeight; height >= until && height > 0; height -= stepSize) {
-    const bucket = new Bucket('block', height, height - stepSize + 1);
+    const bucket = new Bucket(`block-${options.id}`, height, height - stepSize + 1);
 
     for (let i = 0; i <= options.bucketBlocks; i++) {
       const currentHeight = height - i;
@@ -182,7 +180,7 @@ async function collectByTime(walletClient, options) {
     const bucketID = time;
 
     if (!buckets.has(bucketID)) {
-      buckets.set(bucketID, new Bucket('time', time - options.bucketTime, time));
+      buckets.set(bucketID, new Bucket(`time-${options.id}`, time - options.bucketTime, time));
     }
 
     buckets.get(bucketID).addTX(tx, options.removeChange);
