@@ -1,0 +1,204 @@
+#!/usr/bin/env node
+
+'use strict';
+
+const assert = require('assert');
+const fs = require('bfile');
+const NameState = require('hsd/lib/covenants/namestate');
+const common = require('../../lib/common');
+const paths = require('../../lib/paths');
+const node = require('../../lib/node');
+const util = require('../../lib/util');
+const {writeJSON, readJSON} = util;
+
+function help() {
+  // eslint-disable-next-line max-len
+  const help = `Usage: ./bin/namestates/check-claims WALLET_ID STEP [OPTIONS]
+Dump claims specifically, with their expiration dates/blocks.
+
+OPTIONS:
+  --all do from STEP to last.
+  --tip-height <number> - override tip height. (default -1 - get from node)
+
+HOURS - status specific, filter reveals which have less than HOURS left.
+
+STEPS:
+  1, filter: filter bids utxos.
+
+Diff STEPS:
+
+`;
+
+  console.error(help);
+  process.exit(2);
+}
+
+(async () => {
+  const {
+    config,
+    fthrough,
+    id,
+    network,
+    nodeClient,
+    root,
+    step,
+    tip
+  } = await common.setupChecker(help);
+
+  let fallthrough = fthrough;
+
+  const files = paths.checkClaimsByCoinsDirs(root, id);
+  await fs.mkdirp(files.dataDir);
+
+  const days = config.int('days', 30);
+  const futureHeight = tip + network.pow.blocksPerDay * days;
+  const logProgress = config.bool('log-progress', false);
+
+  switch (step) {
+    case '0':
+    case 'dump': {
+      await common.dumpCoins(config, id);
+
+      if (!fallthrough)
+        break;
+    }
+
+    case 'all':
+      fallthrough = true;
+
+    case '1':
+    case 'filter': {
+      if (!await node.hasDumpPlugin(nodeClient))
+        throw new Error('Can not filter w/o dump plugin.');
+
+      console.log('Start filtering...');
+      const coins = await readJSON(files.coins, true);
+      console.log(`Current tip: ${tip}.`);
+
+      const expirable = [];
+
+      let processed = 0;
+      for (const coin of coins) {
+        processed++;
+
+        const prc = util.logPercent(processed, coins.length, 1e5);
+
+        if (logProgress && prc) {
+          console.error(
+            `${id}: ${processed}/${coins.length} coins (${prc}%)`);
+        }
+
+        if (!isCoinExpirable(coin))
+          continue;
+
+        const nameHash = coin.covenant.items[0];
+        const ns = await node.getNameStateByNameHash(
+          nodeClient,
+          nameHash,
+          coin.height,
+          tip
+        );
+
+        if (!ns || !ns.name) {
+          console.log('Could not find: ', coin.hash, coin.index);
+          continue;
+        }
+
+        if (!ns.isClaimable(tip, network))
+          continue
+
+        coin.ns = ns.getJSON(tip, network);
+        coin.name = ns.name.toString('binary');
+
+        expirable.push(coin);
+      }
+
+      await writeJSON(files.filter.expirable, expirable, true);
+
+      if (!fallthrough)
+        break;
+    }
+
+    case '2':
+    case 'sort': {
+      const expirable = await readJSON(files.filter.expirable, true);
+      const claimEnd = network.names.claimPeriod;
+      const expiring = [];
+
+      for (const coin of expirable) {
+        const ns = NameState.fromJSON(coin.ns);
+        const period = ns.renewal + network.names.renewalWindow;
+        let expireBlock = claimEnd;
+
+        if (period > expireBlock)
+          expireBlock = period;
+
+        assert(isExpireBlockCorrect(ns, expireBlock, network));
+        coin.expireBlock = expireBlock;
+
+        expiring.push(coin);
+      }
+
+      await writeJSON(files.sort.expiring, expiring, true);
+
+      if (!fallthrough)
+        break;
+    }
+    case 'status': {
+      const expiringCoins = await readJSON(files.sort.expiring, true);
+
+      console.log(`wallet: ${id}`);
+
+      const names = new Map();
+
+      for (const coin of expiringCoins) {
+        const name = coin.name;
+        const expireBlock = coin.expireBlock;
+
+        names.set(name, expireBlock);
+      }
+
+      const written = {};
+
+      for (const [key, value] of names.entries())
+        written[key] = value;
+
+      console.log(`Collected expire blocks for ${names.size} names.`);
+
+      await writeJSON(files.status.nameExpireBlocks, written);
+    }
+  }
+})().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
+
+function isCoinExpirable(coin) {
+  const {action} = coin.covenant;
+
+  if (coin.height === -1)
+    return false;
+
+  switch (action) {
+    case 'CLAIM':
+    case 'REVEAL':
+    case 'REGISTER':
+    case 'UPDATE':
+    case 'RENEW':
+    case 'TRANSFER':
+    case 'FINALIZE':
+      return true;
+  }
+
+  return false;
+}
+
+function isExpireBlockCorrect(ns, height, network) {
+  if (!ns.isExpired(height, network))
+    return false;
+
+  if (ns.isExpired(height - 1, network))
+    return false;
+
+  return true;
+}
