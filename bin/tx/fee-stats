@@ -244,6 +244,9 @@ class Bucket {
 }
 
 function isTXOurs(tx) {
+  if (!tx)
+    return false;
+
   for (const input of tx.inputs) {
     if (input.path)
       return true;
