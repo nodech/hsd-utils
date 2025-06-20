@@ -53,7 +53,7 @@ function help() {
 
   const info = {
     timestamp: Date.now(),
-    memory: getMemoryInfo(),
+    memory: await getMemoryInfo(),
     disk: {
       disk: await getSystemInfo(hsdPath),
       pm2logs: await getPM2Logs(),
@@ -340,15 +340,55 @@ async function getPM2Logs() {
   return 0;
 }
 
-function getMemoryInfo() {
-  const total = os.totalmem() / 1024;
-  const available = os.freemem() / 1024;
-  const used = total - available;
+async function getMemoryInfo() {
+  // Some parts of this code are based on
+  // https://github.com/sebhildebrandt/systeminformation
+  const rawMemInfo = await fs.readFile('/proc/meminfo', 'utf8');
+  const lines = rawMemInfo.split('\n').map(l => l.trim()).filter(l => l !== '');
+  const memInfo = lines.reduce((acc, line) => {
+    const [key, value] = line.split(':').map(s => s.trim());
+    const valueIsKb = key.endsWith('kB');
+
+    acc[key.toLowerCase()] = parseInt(value, 10) * (valueIsKb ? 1024 : 1);
+    return acc;
+  }, {});
+
+  let result = {
+    total: os.totalmem(),
+    free: os.freemem(),
+    used: os.totalmem() - os.freemem(),
+
+    active: os.totalmem() - os.freemem(),
+    available: os.freemem(),
+    buffers: 0,
+    cached: 0,
+    slab: 0,
+    buffcache: 0,
+    reclaimable: 0,
+  };
+
+  result.total = memInfo['memtotal'];
+  result.total = result.total ? result.total : os.totalmem();
+  result.free = memInfo['memfree'];
+  result.free = result.free ? result.free : os.freemem();
+  result.used = result.total - result.free;
+
+  result.buffers = memInfo['buffers'];
+  result.buffers = result.buffers ? result.buffers : 0;
+  result.cached = memInfo['cached'];
+  result.cached = result.cached ? result.cached : 0;
+  result.slab = memInfo['slab'];
+  result.slab = result.slab ? result.slab : 0;
+  result.buffcache = result.buffers + result.cached + result.slab;
+
+  let available = memInfo['memavailable'];
+  result.available = available ? available : result.free + result.buffcache;
+  result.active = result.total - result.available;
 
   return {
-    total,
-    used,
-    available
+    total: result.total,
+    available: result.available,
+    used: result.active,
   };
 }
 
