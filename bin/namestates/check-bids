@@ -9,7 +9,6 @@ const node = require('../../lib/node');
 const {writeJSON, readJSON} = require('../../lib/util');
 
 function help() {
-  // eslint-disable-next-line max-len
   const help = `Usage: ./bin/namestates/check-bids WALLET_ID STEP [OPTIONS]
 Dump bids that are lost or need reveal (within HOURS).
 

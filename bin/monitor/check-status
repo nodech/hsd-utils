@@ -353,7 +353,7 @@ async function getMemoryInfo() {
     return acc;
   }, {});
 
-  let result = {
+  const result = {
     total: os.totalmem(),
     free: os.freemem(),
     used: os.totalmem() - os.freemem(),
@@ -364,7 +364,7 @@ async function getMemoryInfo() {
     cached: 0,
     slab: 0,
     buffcache: 0,
-    reclaimable: 0,
+    reclaimable: 0
   };
 
   result.total = memInfo['memtotal'];
@@ -381,14 +381,14 @@ async function getMemoryInfo() {
   result.slab = result.slab ? result.slab : 0;
   result.buffcache = result.buffers + result.cached + result.slab;
 
-  let available = memInfo['memavailable'];
+  const available = memInfo['memavailable'];
   result.available = available ? available : result.free + result.buffcache;
   result.active = result.total - result.available;
 
   return {
     total: result.total,
     available: result.available,
-    used: result.active,
+    used: result.active
   };
 }
 

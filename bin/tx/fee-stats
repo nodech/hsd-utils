@@ -5,12 +5,11 @@
 const assert = require('bsert');
 const common = require('../../lib/common');
 const wallet = require('../../lib/wallet');
-const Amount = require('hsd/lib/ui/amount');
 
 const BLOCK_THRESHOLD = 1e6;
 
 function help() {
-  // eslint-disable-next-line max-len
+  /* eslint-disable max-len */
   const help = `Usage: ./bin/tx/fee-stats WALLET_ID [OPTIONS]
 
 OPTIONS:
@@ -29,6 +28,7 @@ HTTP OPTIONS:
   --help                   - output this help.
 `;
 
+  /* eslint-enable max-len */
   console.error(help);
   process.exit(2);
 }
@@ -36,8 +36,7 @@ HTTP OPTIONS:
 (async () => {
   const {
     id,
-    config,
-    network
+    config
   } = await common.setupConfigs(help);
 
   const walletClient = wallet.client();
@@ -77,7 +76,6 @@ HTTP OPTIONS:
       const tx = txs[0];
       assert(tx.height);
       beforeBlock = tx.height;
-
     }
 
     buckets = await collectByBlocks(walletClient, {
@@ -128,13 +126,18 @@ async function collectByBlocks(walletClient, options) {
   const stepSize = options.bucketBlocks;
   const until = tipHeight - (options.bucketCount * stepSize);
 
+  // eslint-disable-next-line max-len
   for (let height = tipHeight; height >= until && height > 0; height -= stepSize) {
-    const bucket = new Bucket(`block-${options.id}`, height, height - stepSize + 1);
+    const bucket = new Bucket(
+      `block-${options.id}`,
+      height,
+      height - stepSize + 1
+    );
 
     for (let i = 0; i <= options.bucketBlocks; i++) {
       const currentHeight = height - i;
 
-      if (currentHeight == 0)
+      if (currentHeight === 0)
         break;
 
       const block = await walletClient.getBlock(options.id, currentHeight);
@@ -180,7 +183,8 @@ async function collectByTime(walletClient, options) {
     const bucketID = time;
 
     if (!buckets.has(bucketID)) {
-      buckets.set(bucketID, new Bucket(`time-${options.id}`, time - options.bucketTime, time));
+      buckets.set(bucketID,
+        new Bucket(`time-${options.id}`, time - options.bucketTime, time));
     }
 
     buckets.get(bucketID).addTX(tx, options.removeChange);
@@ -216,7 +220,8 @@ class Bucket {
     let total = tx.outputs.length;
 
     for (const output of tx.outputs) {
-      countCovenants.set(output.covenant.action, countCovenants.get(output.covenant.action) + 1 || 1);
+      countCovenants.set(output.covenant.action,
+        countCovenants.get(output.covenant.action) + 1 || 1);
     }
 
     if (removeChange) {
@@ -225,7 +230,7 @@ class Bucket {
       if (nones > 1) {
         total -= 1;
         countCovenants.set('NONE', nones - 1);
-      } else if (nones == 1) {
+      } else if (nones === 1) {
         total -= 1;
         countCovenants.delete('NONE');
       }
@@ -233,7 +238,8 @@ class Bucket {
 
     for (const [covenant, count] of countCovenants) {
       const fee = tx.fee / total * count;
-      this.feeByCovenant.set(covenant, this.feeByCovenant.get(covenant) + fee || fee);
+      this.feeByCovenant.set(covenant,
+        this.feeByCovenant.get(covenant) + fee || fee);
     }
   }
 
@@ -274,7 +280,7 @@ async function* getTransactions(walletClient, id, before) {
 
     txs = await walletClient.getHistory(id, {
       after: txs[txs.length - 1].hash,
-      reverse: true,
+      reverse: true
     });
   }
 }
@@ -300,7 +306,7 @@ const ALL_COVENANTS = [
 
 function printTable(buckets) {
   // Convert buckets to table-friendly format
-  const tableData = buckets.map(bucket => {
+  const tableData = buckets.map((bucket) => {
     // Start with basic properties
     const row = {
       'Type': bucket.type,
@@ -309,16 +315,16 @@ function printTable(buckets) {
       'Count': bucket.count,
       'Total Fee': formatHNS(bucket.totalFee, { symbol: true })
     };
-    
+
     // Add fee for each covenant type
     for (const covenant of ALL_COVENANTS) {
       const fee = bucket.feeByCovenant.get(covenant) || 0;
       row[covenant] = formatHNS(fee, { symbol: true });
     }
-    
+
     return row;
   });
-  
+
   // Use console.table to print the formatted table
   console.table(tableData);
 }
@@ -334,7 +340,7 @@ function printJSON(buckets) {
       from: bucket.from,
       to: bucket.to,
       count: bucket.count,
-      totalFee: bucket.totalFee,
+      totalFee: bucket.totalFee
     };
 
     for (const covenant of ALL_COVENANTS) {
@@ -356,7 +362,8 @@ function printJSON(buckets) {
  * @param {Object} options - CSV export options
  * @param {Boolean} [options.header=true] - Whether to include header row
  * @param {String} [options.delimiter=','] - CSV delimiter
- * @param {Boolean} [options.rawValues=false] - If true, export raw numeric values instead of formatted strings
+ * @param {Boolean} [options.rawValues=false] - If true, export raw numeric
+ *    values instead of formatted strings
  * @returns {String} CSV string representation of the buckets
  */
 
@@ -366,19 +373,19 @@ function printCSV(buckets, options = {}) {
     delimiter = ',',
     rawValues = false
   } = options;
-  
+
   // Define the columns for the CSV
   const columns = [
-    'Type', 'From', 'To', 'Count', 'TotalFee', 
+    'Type', 'From', 'To', 'Count', 'TotalFee',
     ...ALL_COVENANTS
   ];
-  
+
   // Start with the header if requested
   const lines = [];
   if (header) {
     lines.push(columns.join(delimiter));
   }
-  
+
   // Add data for each bucket
   for (const bucket of buckets) {
     const row = [
@@ -386,18 +393,20 @@ function printCSV(buckets, options = {}) {
       bucket.from,
       bucket.to,
       bucket.count,
-      rawValues ? bucket.totalFee : formatHNS(bucket.totalFee).replace(' HNS', '')
+      rawValues ?
+        bucket.totalFee :
+        formatHNS(bucket.totalFee).replace(' HNS', '')
     ];
-    
+
     // Add fee for each covenant type
     for (const covenant of ALL_COVENANTS) {
       const fee = bucket.feeByCovenant.get(covenant) || 0;
       row.push(rawValues ? fee : formatHNS(fee).replace(' HNS', ''));
     }
-    
+
     lines.push(row.join(delimiter));
   }
-  
+
   // Join all lines with newlines
   const csvString = lines.join('\n');
   console.log(csvString);
@@ -413,7 +422,7 @@ function printCSV(buckets, options = {}) {
  * @returns {String} Formatted amount
  */
 function formatHNS(value, options = {}) {
-  const { 
+  const {
     locale = 'en-US',
     symbol = false,
     grouping = true
@@ -424,7 +433,7 @@ function formatHNS(value, options = {}) {
     minimumFractionDigits: 0,
     maximumFractionDigits: 6
   });
-  
+
   // Format the number and add the unit symbol if requested
   const formattedNumber = formatter.format(
     value / Math.pow(10, 6)

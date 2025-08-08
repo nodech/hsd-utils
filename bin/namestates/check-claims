@@ -12,7 +12,6 @@ const util = require('../../lib/util');
 const {writeJSON, readJSON} = util;
 
 function help() {
-  // eslint-disable-next-line max-len
   const help = `Usage: ./bin/namestates/check-claims WALLET_ID STEP [OPTIONS]
 Dump claims specifically, with their expiration dates/blocks.
 
@@ -50,8 +49,8 @@ Diff STEPS:
   const files = paths.checkClaimsByCoinsDirs(root, id);
   await fs.mkdirp(files.dataDir);
 
-  const days = config.int('days', 30);
-  const futureHeight = tip + network.pow.blocksPerDay * days;
+  // const days = config.int('days', 30);
+  // const futureHeight = tip + network.pow.blocksPerDay * days;
   const logProgress = config.bool('log-progress', false);
 
   switch (step) {
@@ -105,7 +104,7 @@ Diff STEPS:
         }
 
         if (!ns.isClaimable(tip, network))
-          continue
+          continue;
 
         coin.ns = ns.getJSON(tip, network);
         coin.name = ns.name.toString('binary');

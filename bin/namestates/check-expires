@@ -11,7 +11,6 @@ const util = require('../../lib/util');
 const {writeJSON, readJSON} = util;
 
 function help() {
-  // eslint-disable-next-line max-len
   const help = `Usage: ./bin/namestates/check-expires WALLET_ID STEP [OPTIONS]
 Dump names that are expired or need renew (within DAYS).
 
