@@ -15,6 +15,7 @@ module.exports = [
   },
   {
     files: [
+      'bin/coinstates/get-coin-distribution',
       'bin/coinstates/get-coin-info',
       'bin/dump/dump',
       'bin/dump/dump-blocktimes',
